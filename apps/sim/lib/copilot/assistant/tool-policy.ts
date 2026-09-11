@@ -6,7 +6,7 @@ export const ASSISTANT_TOOLS = new Set([
   'search_integration_tools',
   'call_integration_tool',
   'oauth_get_auth_link',
-  'run_function',
+  // HyperFix chat-light : 'run_function' (execution de code) volontairement exclu de l'assistant.
 ])
 
 const CREDENTIAL_PARAMS = new Set(['credential', 'credentialId', 'oauthCredential'])
