@@ -39,9 +39,7 @@ import {
   RestoreResource,
   Rm as RmTool,
   RunBlock,
-  RunCode,
   RunFromBlock,
-  RunFunction,
   RunWorkflow,
   RunWorkflowUntilBlock,
   SaveUpload,
@@ -71,7 +69,6 @@ import {
   executeUpdateDeploymentVersion,
   executeUpdateWorkspaceMcpServer,
 } from '../tools/handlers/deployment/manage'
-import { executeFunctionExecute } from '../tools/handlers/function-execute'
 import { executeListIntegrationTools } from '../tools/handlers/integration-tools'
 import { executeConnectSlackBot } from '../tools/handlers/management/connect-slack-bot'
 import { executeManageCredential } from '../tools/handlers/management/manage-credential'
@@ -83,7 +80,6 @@ import { executeMaterializeFile } from '../tools/handlers/materialize-file'
 import { executeOAuthGetAuthLink, executeOAuthRequestAccess } from '../tools/handlers/oauth'
 import { executeOpenResource } from '../tools/handlers/resources'
 import { executeRestoreResource } from '../tools/handlers/restore-resource'
-import { executeRunCode } from '../tools/handlers/run-code'
 import { executeVfsGlob, executeVfsGrep, executeVfsRead } from '../tools/handlers/vfs'
 import {
   executeVfsCp,
@@ -182,8 +178,6 @@ export function buildHandlerMap(): Record<string, ToolHandler> {
     [RestoreResource.id]: h(executeRestoreResource),
     [ListIntegrationTools.id]: h(executeListIntegrationTools),
     [SaveUpload.id]: h(executeMaterializeFile),
-    [RunFunction.id]: h(executeFunctionExecute),
-    [RunCode.id]: h(executeRunCode),
 
     ...buildServerToolHandlers(),
   }
