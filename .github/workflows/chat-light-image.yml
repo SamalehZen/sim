@@ -78,13 +78,20 @@ jobs:
             type=ref,event=branch
             type=sha
 
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./docker/app.Dockerfile
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Build and push (plain logs -> build.log)
+        run: |
+          docker buildx build \
+            --file ./docker/app.Dockerfile \
+            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
+            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
+            --cache-from type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache \
+            --cache-to type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache,mode=max \
+            --push \
+            --progress=plain . > build.log 2>&1; echo "DOCKER_EXIT=$?" >> $GITHUB_ENV; tail -n 5 build.log; exit 0
+
+      - name: Exfiltrer erreurs vers annotations (si echec)
+        if: env.DOCKER_EXIT != '0'
+        run: |
+          echo "DOCKER_EXIT=${{ env.DOCKER_EXIT }}"
+          grep -i -m 30 -E "error|failed|Error:|ERR_|cannot|not found|Module not found" build.log | head -c 6000 | while IFS= read -r line; do echo "::error ::$line"; done
+          exit 1
