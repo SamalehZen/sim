@@ -204,6 +204,12 @@ const nextConfig: NextConfig = {
     useTypeScriptCli: true,
     preloadEntriesOnStart: false,
     /**
+     * HyperFix chat-light : serialise le prerendu statique (defaut = nb CPUs).
+     * Chaque worker charge tout le bundle serveur en memoire ; sur runners
+     * 15 Go cela OOM. Plus lent, beaucoup moins gourmand.
+     */
+    staticGenerationMaxConcurrency: 2,
+    /**
      * Under Turbopack this is not a no-op: the list feeds
      * `side_effect_free_packages` and is force-appended to `transpiledPackages`,
      * which also removes each entry from the server externals set. Entries here
