@@ -35,17 +35,9 @@ jobs:
           sudo docker image prune -af || true
           df -h /
 
-      - name: Fallocate swapfile (try 12G down to 4G)
+      - name: Fallocate swapfile (8G via dd)
         run: |
-          SWAP_OK=""
-          for SZ in 12G 10G 8G 6G 4G; do
-            if sudo fallocate -l $SZ /swapfile 2>/dev/null; then
-              SWAP_OK=1
-              break
-            fi
-            sudo rm -f /swapfile
-          done
-          test -n "$SWAP_OK"
+          sudo dd if=/dev/zero of=/swapfile bs=1M count=8192 status=none
           sudo chmod 600 /swapfile
           ls -lh /swapfile
 
