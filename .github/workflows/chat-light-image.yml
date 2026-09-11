@@ -37,13 +37,15 @@ jobs:
           sudo docker image prune -af || true
           df -h /
 
-      - name: Fallocate swapfile (8G via dd)
+      - name: Fallocate swapfile (8G via dd, best effort)
+        continue-on-error: true
         run: |
           sudo dd if=/dev/zero of=/swapfile bs=1M count=8192 status=none
           sudo chmod 600 /swapfile
           ls -lh /swapfile
 
-      - name: Mkswap and swapon
+      - name: Mkswap and swapon (best effort)
+        continue-on-error: true
         run: |
           sudo mkswap /swapfile
           sudo swapon /swapfile
