@@ -36,13 +36,9 @@ jobs:
           df -h /
 
       - name: Add 16G swap (Next build peaks over 16GB RAM)
-        run: |
-          set -x
-          sudo fallocate -l 16G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
-          free -h
+        uses: pierotofy/set-swap-space@v1
+        with:
+          swap-size-gb: 16
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
