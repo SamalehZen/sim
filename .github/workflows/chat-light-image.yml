@@ -100,5 +100,5 @@ jobs:
         if: always()
         run: |
           echo "DOCKER_EXIT=${DOCKER_EXIT:-killed-before-echo}"
-          if [ -f build.log ]; then tail -n 40 build.log | head -c 6000 | while IFS= read -r line; do echo "::error ::$line"; done; else echo "::error ::pas de build.log (shell tue avant la fin)"; fi
+          if [ -f build.log ]; then tail -n 120 build.log | head -c 9000 | while IFS= read -r line; do echo "::error ::$line"; done; else echo "::error ::pas de build.log (shell tue avant la fin)"; fi
           test "${DOCKER_EXIT:-1}" = "0"
