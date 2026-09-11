@@ -35,15 +35,15 @@ jobs:
           sudo docker image prune -af || true
           df -h /
 
-      - name: Make 10G swapfile (Next build peaks over 16GB RAM)
+      - name: Fallocate 10G swapfile
         run: |
           sudo fallocate -l 10G /swapfile
           sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
           ls -lh /swapfile
 
-      - name: Enable swap
+      - name: Mkswap and swapon
         run: |
+          sudo mkswap /swapfile
           sudo swapon /swapfile
           free -h
 
