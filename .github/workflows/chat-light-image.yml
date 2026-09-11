@@ -51,6 +51,13 @@ jobs:
           sudo swapon /swapfile
           free -h
 
+      - name: Probe disk and memory (telemetry via annotations)
+        run: |
+          echo "::notice ::DISK_ROOT $(df -h / | tail -1 | tr -s ' ')"
+          echo "::notice ::MEMINFO $(free -h | tr '\n' '|')"
+          echo "::notice ::SWAPFILE $(ls -lh /swapfile 2>&1)"
+          echo "::notice ::SWAPON_CHECK $(swapon --show 2>&1 | tr '\n' '|')"
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
