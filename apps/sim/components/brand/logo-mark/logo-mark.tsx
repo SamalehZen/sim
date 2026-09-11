@@ -3,7 +3,7 @@
 import { type CSSProperties, type ReactNode, useState } from 'react'
 import { cn } from '@sim/emcn'
 import { ThinkingLoader } from '@/components/ui'
-import colorMixFallbacks from '@/app/(landing)/components/shared/color-mix-fallbacks/color-mix-fallbacks.module.css'
+import colorMixFallbacks from '@/components/brand/logo-mark/color-mix-fallbacks.module.css'
 
 interface LogoMarkProps {
   /** Server-rendered Sim wordmark, shown by default. */

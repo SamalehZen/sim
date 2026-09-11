@@ -17,7 +17,7 @@ import { getCredentialGroupProviderService } from '@/lib/credential-groups/provi
 import { enforcePublicCredentialGroupIpRateLimit } from '@/lib/credential-groups/rate-limit'
 import { APP_ENTRY_PATH, organizationRoutes } from '@/lib/navigation/paths'
 import { AuthHeader, SupportFooter } from '@/app/(auth)/components'
-import { LogoShell } from '@/app/(landing)/components/logo-shell'
+import { LogoShell } from '@/components/brand/logo-shell'
 import { OAuthConnectLink } from '@/app/credential-groups/enroll/[token]/oauth-reconnect-link'
 import { CredentialGroupOAuthToast } from '@/app/credential-groups/enroll/[token]/oauth-toast'
 import {

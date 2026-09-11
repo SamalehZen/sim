@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { DesktopTitleBarLane } from '@/app/_shell/desktop-title-bar'
-import { LogoMark, SimWordmark } from '@/app/(landing)/components/navbar/components'
+import { LogoMark } from '@/components/brand/logo-mark'
+import { SimWordmark } from '@/components/brand/sim-wordmark'
 
 interface AuthShellProps {
   /** Centered content column (the form, status copy, etc.). */
