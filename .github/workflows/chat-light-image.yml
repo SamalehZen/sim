@@ -35,10 +35,17 @@ jobs:
           sudo docker image prune -af || true
           df -h /
 
-      - name: Add 16G swap (Next build peaks over 16GB RAM)
-        uses: pierotofy/set-swap-space@v1
-        with:
-          swap-size-gb: 16
+      - name: Make 10G swapfile (Next build peaks over 16GB RAM)
+        run: |
+          sudo fallocate -l 10G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          ls -lh /swapfile
+
+      - name: Enable swap
+        run: |
+          sudo swapon /swapfile
+          free -h
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
