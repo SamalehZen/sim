@@ -62,8 +62,6 @@ services:
         condition: service_healthy
       migrations:
         condition: service_completed_successfully
-      realtime:
-        condition: service_healthy
     healthcheck:
       test: ['CMD', 'curl', '-fsS', 'http://127.0.0.1:3000']
       interval: 90s
@@ -71,39 +69,6 @@ services:
       retries: 3
       start_period: 10s
 
-  realtime:
-    env_file:
-      - path: .env
-        required: false
-    image: ghcr.io/simstudioai/realtime:${SIM_VERSION:-latest}
-    restart: unless-stopped
-    ports:
-      - '3002:3002'
-    deploy:
-      resources:
-        limits:
-          memory: 1G
-    environment:
-      - NODE_ENV=production
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-simstudio}
-      - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
-      # Derived from NEXT_PUBLIC_APP_URL, matching the simstudio service — a
-      # single public-origin variable keeps the two from disagreeing.
-      - BETTER_AUTH_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
-      - 'BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:?is required and must match the value used by the simstudio service}'
-      - 'INTERNAL_API_SECRET=${INTERNAL_API_SECRET:?is required and must match the value used by the simstudio service}'
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    healthcheck:
-      test: ['CMD', 'curl', '-fsS', 'http://127.0.0.1:3002/health']
-      interval: 90s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
 
   migrations:
     image: ghcr.io/simstudioai/migrations:${SIM_VERSION:-latest}
@@ -134,22 +99,6 @@ services:
   # scheduled workflows, polling triggers, connector syncs, the transactional
   # outbox, subscription renewal, and data drains. Without it none of those run.
   # Schedules live in docker/crontab and mirror helm/sim/values.yaml cronjobs.jobs.
-  cron:
-    # Deliberately NOT pinned to SIM_VERSION: the scheduler only makes HTTP calls
-    # and shares no database schema with the app, so it does not need to move in
-    # lockstep — and no cron tag exists for releases that predate it.
-    image: ghcr.io/simstudioai/cron:${SIM_CRON_VERSION:-latest}
-    # on-failure, not unless-stopped: with no CRON_SECRET the container exits 0
-    # after explaining why, and stays stopped instead of crash-looping. Upgrades
-    # from a compose file that predates this service therefore still come up.
-    restart: on-failure
-    environment:
-      - SIM_URL=http://simstudio:3000
-      - CRON_SECRET=${CRON_SECRET:-}
-      - TZ=${TZ:-UTC}
-    depends_on:
-      simstudio:
-        condition: service_healthy
 
   db:
     image: pgvector/pgvector:pg17
