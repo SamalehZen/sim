@@ -80,12 +80,19 @@ jobs:
 
       - name: Build and push (plain logs -> build.log)
         run: |
+          CACHE_IMG=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache
+          CACHE_ARGS="--cache-to type=registry,ref=$CACHE_IMG,mode=max"
+          if docker manifest inspect $CACHE_IMG >/dev/null 2>&1; then
+            CACHE_ARGS="--cache-from type=registry,ref=$CACHE_IMG $CACHE_ARGS"
+            echo "::notice ::CACHE_HIT build avec cache registry"
+          else
+            echo "::notice ::CACHE_MISS premier build sans cache"
+          fi
           docker buildx build \
             --file ./docker/app.Dockerfile \
             --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
             --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
-            --cache-from type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache \
-            --cache-to type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache,mode=max \
+            $CACHE_ARGS \
             --push \
             --progress=plain . > build.log 2>&1; echo "DOCKER_EXIT=$?" >> $GITHUB_ENV; tail -n 5 build.log; exit 0
 
