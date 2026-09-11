@@ -4,8 +4,35 @@
  * serialized projection of `BlockConfig` consumed by landing + workspace UIs.
  */
 
-import type { IntegrationLandingContent } from '@/app/(landing)/integrations/data/types'
 import type { BlockConfig, IntegrationTag } from '@/blocks/types'
+
+export interface IntegrationInstallStep {
+  title: string
+  body: string
+}
+
+export interface IntegrationLandingContent {
+  /**
+   * Install walkthrough for OAuth apps whose connection lives behind sign-in.
+   * Provides the "Add to {app}" instructions that app marketplaces require
+   * when the install button sits behind a login.
+   */
+  install?: {
+    heading: string
+    intro: string
+    steps: IntegrationInstallStep[]
+  }
+  /** Short data-handling summary shown next to a privacy-policy link. */
+  privacy?: {
+    body: string
+    href: string
+  }
+  /**
+   * Disclaimer about AI-generated content, required by some marketplaces for
+   * apps with an AI component (e.g. Slack's AI-components guideline).
+   */
+  aiDisclaimer?: string
+}
 
 /** Normalized authentication mode surfaced in the catalog. */
 export type AuthType = 'oauth' | 'api-key' | 'none'
@@ -64,6 +91,7 @@ export interface Integration {
    */
   oauthServiceId?: string
   /** Hand-authored landing content baked in at generation time (see `landing-content.ts`). */
+
   landingContent?: IntegrationLandingContent
 }
 
