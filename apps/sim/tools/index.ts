@@ -66,7 +66,6 @@ import {
   RESOLVED_SECRET_PROVENANCE_FIELD,
   RESOLVED_SECRET_PROVENANCE_METADATA_V1,
 } from '@/lib/execution/private-tool-metadata'
-import { executeFunctionTool } from '@/lib/internal/function/execute'
 import { getInternalToolOperationHandler } from '@/lib/internal/tool-operations/registry.server'
 import type { InternalToolOperationContext } from '@/lib/internal/tool-operations/types'
 import { hostedKeyMetrics } from '@/lib/monitoring/metrics'
@@ -2702,21 +2701,8 @@ async function executeDeclaredInternalOperation({
 
   let response: Response
   if (isFunctionOperation) {
-    if (!isFunctionExecuteBody(operationInput)) {
-      throw new Error('Function operation input must be an object')
-    }
-    response = await executeFunctionTool({
-      body: operationInput,
-      headers,
-      context: {
-        ...context,
-        userId: context.userId,
-        workspaceId: context.workspaceId,
-      },
-      requestId,
-      ...(signal ? { signal } : {}),
-      ...(internalSandboxProfile ? { sandboxProfile: internalSandboxProfile } : {}),
-    })
+    // HyperFix chat-light : execution de code supprimee.
+    throw new Error('Function/custom-tool code execution is disabled in chat-light')
   } else {
     const handler = await getInternalToolOperationHandler(toolId)
     if (!handler) throw new Error(`No internal operation registered for ${toolId}`)

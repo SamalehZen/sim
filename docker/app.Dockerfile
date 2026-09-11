@@ -80,7 +80,7 @@ COPY --from=pruner /app/bun.lock ./bun.lock
 RUN --mount=type=cache,id=bun-cache,target=/root/.bun/install/cache \
     --mount=type=cache,id=npm-cache,target=/root/.npm \
     HUSKY=0 bun install --ignore-scripts --linker=hoisted && \
-    cd node_modules/isolated-vm && JOBS=4 /app/node_modules/.bin/node-gyp rebuild --release
+    cd node_modules/isolated-vm && JOBS=1 /app/node_modules/.bin/node-gyp rebuild --release
 
 # ========================================
 # Builder Stage: Build the Application

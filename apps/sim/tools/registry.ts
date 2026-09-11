@@ -1462,7 +1462,6 @@ import {
   firefliesUploadAudioTool,
 } from '@/tools/fireflies'
 import { flintCreateTaskTool, flintGeneratePagesTool, flintGetTaskTool } from '@/tools/flint'
-import { functionExecuteTool } from '@/tools/function'
 import {
   gammaCheckStatusTool,
   gammaGenerateFromTemplateTool,
@@ -6297,7 +6296,6 @@ export const tools: Record<string, ExecutableToolConfig> = {
   webhook_request: webhookRequestTool,
   huggingface_chat: huggingfaceChatTool,
   llm_chat: llmChatTool,
-  function_execute: functionExecuteTool,
   gamma_generate: gammaGenerateTool,
   gamma_generate_from_template: gammaGenerateFromTemplateTool,
   gamma_check_status: gammaCheckStatusTool,
