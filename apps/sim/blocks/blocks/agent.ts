@@ -30,7 +30,7 @@ import type { ToolResponse } from '@/tools/types'
 const logger = createLogger('AgentBlock')
 
 /** Model the agent block falls back to when `model` is unset or the auto pseudo-model. */
-const AGENT_FALLBACK_MODEL = 'claude-sonnet-5'
+const AGENT_FALLBACK_MODEL = 'experiential/gpt-5.6-luna'
 const MODELS_WITH_REASONING_EFFORT = getModelsWithReasoningEffort()
 const MODELS_WITH_VERBOSITY = getModelsWithVerbosity()
 const MODELS_WITH_THINKING = getModelsWithThinking()
