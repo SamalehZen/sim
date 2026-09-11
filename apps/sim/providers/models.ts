@@ -2270,6 +2270,47 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
       },
     ],
   },
+  experiential: {
+    id: 'experiential',
+    name: 'ExperientialLabs',
+    description: 'ExperientialLabs models via OpenAI-compatible API (HyperFix chat-light)',
+    defaultModel: 'experiential/gpt-5.6-luna',
+    modelPatterns: [/^experiential\//],
+    color: '#22d3ee',
+    capabilities: {
+      toolUsageControl: true,
+    },
+    models: [
+      {
+        id: 'experiential/gpt-5.6-luna',
+        pricing: {
+          input: 0,
+          output: 0,
+          updatedAt: '2026-09-11',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 2 },
+          maxOutputTokens: 16384,
+        },
+        contextWindow: 128000,
+        releaseDate: '2026-09-11',
+      },
+      {
+        id: 'experiential/deepseek-v4-flash',
+        pricing: {
+          input: 0,
+          output: 0,
+          updatedAt: '2026-09-11',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 2 },
+          maxOutputTokens: 16384,
+        },
+        contextWindow: 128000,
+        releaseDate: '2026-09-11',
+      },
+    ],
+  },
   xai: {
     id: 'xai',
     fileAttachment: { maxBytes: 20 * 1024 * 1024, strategy: 'remote-url' },

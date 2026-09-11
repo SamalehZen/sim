@@ -7,6 +7,7 @@ export type ProviderName =
   | 'fireworks'
   | 'together'
   | 'baseten'
+  | 'experiential'
   | 'base'
 
 export interface OpenRouterModelInfo {

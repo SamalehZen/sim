@@ -36,6 +36,10 @@ export const basetenProviderModelsQuerySchema = z.object({
   workspaceId: z.string().min(1).optional(),
 })
 
+export const experientialProviderModelsQuerySchema = z.object({
+  workspaceId: z.string().min(1).optional(),
+})
+
 export const openRouterUpstreamResponseSchema = z.object({
   data: z
     .array(
@@ -248,6 +252,16 @@ export const getBasetenProviderModelsContract = defineRouteContract({
   method: 'GET',
   path: '/api/providers/baseten/models',
   query: basetenProviderModelsQuerySchema,
+  response: {
+    mode: 'json',
+    schema: providerModelsResponseSchema,
+  },
+})
+
+export const getExperientialProviderModelsContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/providers/experiential/models',
+  query: experientialProviderModelsQuerySchema,
   response: {
     mode: 'json',
     schema: providerModelsResponseSchema,

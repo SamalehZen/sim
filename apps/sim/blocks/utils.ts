@@ -61,6 +61,7 @@ export function getModelOptions() {
   const fireworksModels = providersState.providers.fireworks.models
   const togetherModels = providersState.providers.together.models
   const basetenModels = providersState.providers.baseten.models
+  const experientialModels = providersState.providers.experiential.models
   const allModels = Array.from(
     new Set([
       ...baseModels,
@@ -72,6 +73,7 @@ export function getModelOptions() {
       ...fireworksModels,
       ...togetherModels,
       ...basetenModels,
+      ...experientialModels,
     ])
   )
 

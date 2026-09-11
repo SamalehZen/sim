@@ -15,6 +15,7 @@ export const useProvidersStore = create<ProvidersStore>((set, get) => ({
     fireworks: { models: [], isLoading: false },
     together: { models: [], isLoading: false },
     baseten: { models: [], isLoading: false },
+    experiential: { models: [], isLoading: false },
   },
   openRouterModelInfo: {},
 

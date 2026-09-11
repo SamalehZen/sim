@@ -6,6 +6,7 @@ import { basetenProvider } from '@/providers/baseten'
 import { bedrockProvider } from '@/providers/bedrock'
 import { cerebrasProvider } from '@/providers/cerebras'
 import { deepseekProvider } from '@/providers/deepseek'
+import { experientialProvider } from '@/providers/experiential'
 import { fireworksProvider } from '@/providers/fireworks'
 import { googleProvider } from '@/providers/google'
 import { groqProvider } from '@/providers/groq'
@@ -35,6 +36,7 @@ const providerRegistry: Record<ProviderId, ProviderConfig> = {
   google: googleProvider,
   vertex: vertexProvider,
   deepseek: deepseekProvider,
+  experiential: experientialProvider,
   xai: xAIProvider,
   cerebras: cerebrasProvider,
   groq: groqProvider,

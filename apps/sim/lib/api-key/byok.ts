@@ -303,6 +303,30 @@ export async function getApiKeyWithBYOK(
     throw new Error(`API key is required for Baseten ${model}`)
   }
 
+  const isExperientialModel =
+    provider === 'experiential' ||
+    useProvidersStore.getState().providers.experiential.models.includes(model)
+  if (isExperientialModel) {
+    if (workspaceId) {
+      const byokResult = await getBYOKKey(workspaceId, 'experiential')
+      if (byokResult) {
+        logger.info('Using BYOK key for ExperientialLabs', {
+          model,
+          workspaceId,
+          scope: byokResult.scope,
+        })
+        return byokResult
+      }
+    }
+    if (userProvidedKey) {
+      return { apiKey: userProvidedKey, isBYOK: false }
+    }
+    if (env.EXPERIENTIAL_API_KEY) {
+      return { apiKey: env.EXPERIENTIAL_API_KEY, isBYOK: false }
+    }
+    throw new Error(`API key is required for ExperientialLabs ${model}`)
+  }
+
   const isOllamaCloudModel =
     provider === 'ollama-cloud' ||
     useProvidersStore.getState().providers['ollama-cloud'].models.includes(model)

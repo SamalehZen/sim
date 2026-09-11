@@ -5,6 +5,7 @@ import { requestJson } from '@/lib/api/client/request'
 import {
   getBaseProviderModelsContract,
   getBasetenProviderModelsContract,
+  getExperientialProviderModelsContract,
   getFireworksProviderModelsContract,
   getLitellmProviderModelsContract,
   getOllamaCloudProviderModelsContract,
@@ -91,6 +92,11 @@ async function requestProviderModels(
       })
     case 'baseten':
       return requestJson(getBasetenProviderModelsContract, {
+        query: { workspaceId },
+        signal,
+      })
+    case 'experiential':
+      return requestJson(getExperientialProviderModelsContract, {
         query: { workspaceId },
         signal,
       })
