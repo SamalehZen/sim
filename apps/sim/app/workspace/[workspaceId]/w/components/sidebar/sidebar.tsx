@@ -171,6 +171,12 @@ const SEARCH_MODAL_DATE_FORMAT = new Intl.DateTimeFormat(undefined, {
   minute: '2-digit',
 })
 
+/**
+ * HyperFix chat-light : section Workflows de la sidebar masquee.
+ * Mettre a `true` pour restaurer le builder de workflows.
+ */
+const SHOW_WORKFLOWS_SECTION = false
+
 /** Stands in for a chip row while a list loads, so it carries no margin either. */
 function SidebarItemSkeleton() {
   return (
@@ -1598,164 +1604,171 @@ export const Sidebar = memo(function Sidebar() {
                       </div>
                     </SidebarSection>
 
-                    <SidebarSection
-                      title='Workflows'
-                      railCollapsed={isCollapsed}
-                      className={cn(SIDEBAR_SECTION_GAP_CLASS, 'workflows-section relative')}
-                      action={
-                        isCollapsed ? undefined : (
-                          <div className='flex items-center justify-center gap-2'>
-                            <DropdownMenu>
+                    {/* HyperFix chat-light : section Workflows masquee (voir SHOW_WORKFLOWS_SECTION). */}
+                    {SHOW_WORKFLOWS_SECTION && (
+                      <SidebarSection
+                        title='Workflows'
+                        railCollapsed={isCollapsed}
+                        className={cn(SIDEBAR_SECTION_GAP_CLASS, 'workflows-section relative')}
+                        action={
+                          isCollapsed ? undefined : (
+                            <div className='flex items-center justify-center gap-2'>
+                              <DropdownMenu>
+                                <Tooltip.Root>
+                                  <Tooltip.Trigger asChild>
+                                    <DropdownMenuTrigger asChild>
+                                      <Button
+                                        variant='quiet'
+                                        size='icon'
+                                        disabled={!permissionsLoading && !canEdit}
+                                      >
+                                        {isImporting || isCreatingFolder ? (
+                                          <Loader className='h-[16px] w-[16px]' animate />
+                                        ) : (
+                                          <MoreHorizontal className='size-[14px]' />
+                                        )}
+                                      </Button>
+                                    </DropdownMenuTrigger>
+                                  </Tooltip.Trigger>
+                                  <Tooltip.Content>
+                                    <p>More actions</p>
+                                  </Tooltip.Content>
+                                </Tooltip.Root>
+                                <DropdownMenuContent
+                                  align='start'
+                                  sideOffset={8}
+                                  className='min-w-[160px]'
+                                >
+                                  <DropdownMenuItem
+                                    onSelect={handleImportWorkflow}
+                                    disabled={!canEdit || isImporting}
+                                  >
+                                    <Upload />
+                                    {isImporting ? 'Importing...' : 'Import workflow'}
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onSelect={handleCreateFolder}
+                                    disabled={!canEdit || isCreatingFolder}
+                                  >
+                                    <FolderPlus />
+                                    {isCreatingFolder ? 'Creating folder...' : 'Create folder'}
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
                               <Tooltip.Root>
                                 <Tooltip.Trigger asChild>
-                                  <DropdownMenuTrigger asChild>
-                                    <Button
-                                      variant='quiet'
-                                      size='icon'
-                                      disabled={!permissionsLoading && !canEdit}
-                                    >
-                                      {isImporting || isCreatingFolder ? (
-                                        <Loader className='h-[16px] w-[16px]' animate />
-                                      ) : (
-                                        <MoreHorizontal className='size-[14px]' />
-                                      )}
-                                    </Button>
-                                  </DropdownMenuTrigger>
+                                  <Button
+                                    variant='quiet'
+                                    size='icon'
+                                    onClick={handleCreateWorkflow}
+                                    disabled={
+                                      isCreatingWorkflow || (!permissionsLoading && !canEdit)
+                                    }
+                                  >
+                                    <Plus className='h-[16px] w-[16px]' />
+                                  </Button>
                                 </Tooltip.Trigger>
                                 <Tooltip.Content>
-                                  <p>More actions</p>
+                                  {isCreatingWorkflow ? (
+                                    <p>Creating workflow...</p>
+                                  ) : (
+                                    <Tooltip.Shortcut keys={isMac ? '⌘⇧P' : 'Ctrl+Shift+P'}>
+                                      New workflow
+                                    </Tooltip.Shortcut>
+                                  )}
                                 </Tooltip.Content>
                               </Tooltip.Root>
-                              <DropdownMenuContent
-                                align='start'
-                                sideOffset={8}
-                                className='min-w-[160px]'
-                              >
-                                <DropdownMenuItem
-                                  onSelect={handleImportWorkflow}
-                                  disabled={!canEdit || isImporting}
-                                >
-                                  <Upload />
-                                  {isImporting ? 'Importing...' : 'Import workflow'}
+                            </div>
+                          )
+                        }
+                      >
+                        {isCollapsed ? (
+                          <div className='px-2'>
+                            <CollapsedSidebarMenu
+                              icon={workflowsCollapsedIcon}
+                              hover={workflowsHover}
+                              ariaLabel='Workflows'
+                              isEditing={!!workflowFlyoutRename.editingId}
+                              primaryAction={workflowsPrimaryAction}
+                            >
+                              {workflowsLoading && regularWorkflows.length === 0 ? (
+                                <DropdownMenuItem disabled>
+                                  <Loader className='size-[14px]' animate />
+                                  Loading...
                                 </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onSelect={handleCreateFolder}
-                                  disabled={!canEdit || isCreatingFolder}
-                                >
-                                  <FolderPlus />
-                                  {isCreatingFolder ? 'Creating folder...' : 'Create folder'}
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                            <Tooltip.Root>
-                              <Tooltip.Trigger asChild>
-                                <Button
-                                  variant='quiet'
-                                  size='icon'
-                                  onClick={handleCreateWorkflow}
-                                  disabled={isCreatingWorkflow || (!permissionsLoading && !canEdit)}
-                                >
-                                  <Plus className='h-[16px] w-[16px]' />
-                                </Button>
-                              </Tooltip.Trigger>
-                              <Tooltip.Content>
-                                {isCreatingWorkflow ? (
-                                  <p>Creating workflow...</p>
-                                ) : (
-                                  <Tooltip.Shortcut keys={isMac ? '⌘⇧P' : 'Ctrl+Shift+P'}>
-                                    New workflow
-                                  </Tooltip.Shortcut>
-                                )}
-                              </Tooltip.Content>
-                            </Tooltip.Root>
+                              ) : regularWorkflows.length === 0 ? (
+                                <DropdownMenuItem disabled>No workflows yet</DropdownMenuItem>
+                              ) : (
+                                <>
+                                  {collapsedRootItems.map((item) =>
+                                    item.kind === 'folder' ? (
+                                      <CollapsedFolderItems
+                                        key={item.id}
+                                        nodes={[item.node]}
+                                        workflowsByFolder={workflowsByFolder}
+                                        workspaceId={workspaceId}
+                                        currentWorkflowId={workflowId}
+                                        editingWorkflowId={workflowFlyoutRename.editingId}
+                                        editingValue={workflowFlyoutRename.value}
+                                        editInputRef={workflowFlyoutRename.inputRef}
+                                        isRenamingWorkflow={workflowFlyoutRename.isSaving}
+                                        onEditValueChange={workflowFlyoutRename.setValue}
+                                        onEditKeyDown={workflowFlyoutRename.handleKeyDown}
+                                        onEditBlur={handleWorkflowRenameBlur}
+                                        onWorkflowOpenInNewTab={handleCollapsedWorkflowOpenInNewTab}
+                                        onWorkflowRename={handleCollapsedWorkflowRename}
+                                        canRenameWorkflow={canEdit}
+                                      />
+                                    ) : (
+                                      <CollapsedWorkflowFlyoutItem
+                                        key={item.id}
+                                        workflow={item.workflow}
+                                        href={`/workspace/${workspaceId}/w/${item.workflow.id}`}
+                                        isCurrentRoute={item.workflow.id === workflowId}
+                                        isEditing={
+                                          item.workflow.id === workflowFlyoutRename.editingId
+                                        }
+                                        editValue={workflowFlyoutRename.value}
+                                        inputRef={workflowFlyoutRename.inputRef}
+                                        isRenaming={workflowFlyoutRename.isSaving}
+                                        onEditValueChange={workflowFlyoutRename.setValue}
+                                        onEditKeyDown={workflowFlyoutRename.handleKeyDown}
+                                        onEditBlur={handleWorkflowRenameBlur}
+                                        onOpenInNewTab={() =>
+                                          handleCollapsedWorkflowOpenInNewTab(item.workflow)
+                                        }
+                                        onRename={() =>
+                                          handleCollapsedWorkflowRename(item.workflow)
+                                        }
+                                        canRename={canEdit}
+                                      />
+                                    )
+                                  )}
+                                </>
+                              )}
+                            </CollapsedSidebarMenu>
                           </div>
-                        )
-                      }
-                    >
-                      {isCollapsed ? (
-                        <div className='px-2'>
-                          <CollapsedSidebarMenu
-                            icon={workflowsCollapsedIcon}
-                            hover={workflowsHover}
-                            ariaLabel='Workflows'
-                            isEditing={!!workflowFlyoutRename.editingId}
-                            primaryAction={workflowsPrimaryAction}
-                          >
+                        ) : (
+                          <div className='px-2'>
                             {workflowsLoading && regularWorkflows.length === 0 ? (
-                              <DropdownMenuItem disabled>
-                                <Loader className='size-[14px]' animate />
-                                Loading...
-                              </DropdownMenuItem>
-                            ) : regularWorkflows.length === 0 ? (
-                              <DropdownMenuItem disabled>No workflows yet</DropdownMenuItem>
+                              <SidebarItemSkeleton />
                             ) : (
-                              <>
-                                {collapsedRootItems.map((item) =>
-                                  item.kind === 'folder' ? (
-                                    <CollapsedFolderItems
-                                      key={item.id}
-                                      nodes={[item.node]}
-                                      workflowsByFolder={workflowsByFolder}
-                                      workspaceId={workspaceId}
-                                      currentWorkflowId={workflowId}
-                                      editingWorkflowId={workflowFlyoutRename.editingId}
-                                      editingValue={workflowFlyoutRename.value}
-                                      editInputRef={workflowFlyoutRename.inputRef}
-                                      isRenamingWorkflow={workflowFlyoutRename.isSaving}
-                                      onEditValueChange={workflowFlyoutRename.setValue}
-                                      onEditKeyDown={workflowFlyoutRename.handleKeyDown}
-                                      onEditBlur={handleWorkflowRenameBlur}
-                                      onWorkflowOpenInNewTab={handleCollapsedWorkflowOpenInNewTab}
-                                      onWorkflowRename={handleCollapsedWorkflowRename}
-                                      canRenameWorkflow={canEdit}
-                                    />
-                                  ) : (
-                                    <CollapsedWorkflowFlyoutItem
-                                      key={item.id}
-                                      workflow={item.workflow}
-                                      href={`/workspace/${workspaceId}/w/${item.workflow.id}`}
-                                      isCurrentRoute={item.workflow.id === workflowId}
-                                      isEditing={
-                                        item.workflow.id === workflowFlyoutRename.editingId
-                                      }
-                                      editValue={workflowFlyoutRename.value}
-                                      inputRef={workflowFlyoutRename.inputRef}
-                                      isRenaming={workflowFlyoutRename.isSaving}
-                                      onEditValueChange={workflowFlyoutRename.setValue}
-                                      onEditKeyDown={workflowFlyoutRename.handleKeyDown}
-                                      onEditBlur={handleWorkflowRenameBlur}
-                                      onOpenInNewTab={() =>
-                                        handleCollapsedWorkflowOpenInNewTab(item.workflow)
-                                      }
-                                      onRename={() => handleCollapsedWorkflowRename(item.workflow)}
-                                      canRename={canEdit}
-                                    />
-                                  )
-                                )}
-                              </>
+                              <WorkflowList
+                                workspaceId={workspaceId}
+                                workflowId={workflowId}
+                                regularWorkflows={regularWorkflows}
+                                isLoading={isLoading}
+                                canReorder={canEdit}
+                                scrollContainerRef={scrollContainerRef}
+                                onCreateWorkflow={handleCreateWorkflow}
+                                onCreateFolder={handleCreateFolder}
+                                disableCreate={!canEdit || isCreatingWorkflow || isCreatingFolder}
+                              />
                             )}
-                          </CollapsedSidebarMenu>
-                        </div>
-                      ) : (
-                        <div className='px-2'>
-                          {workflowsLoading && regularWorkflows.length === 0 ? (
-                            <SidebarItemSkeleton />
-                          ) : (
-                            <WorkflowList
-                              workspaceId={workspaceId}
-                              workflowId={workflowId}
-                              regularWorkflows={regularWorkflows}
-                              isLoading={isLoading}
-                              canReorder={canEdit}
-                              scrollContainerRef={scrollContainerRef}
-                              onCreateWorkflow={handleCreateWorkflow}
-                              onCreateFolder={handleCreateFolder}
-                              disableCreate={!canEdit || isCreatingWorkflow || isCreatingFolder}
-                            />
-                          )}
-                        </div>
-                      )}
-                    </SidebarSection>
+                          </div>
+                        )}
+                      </SidebarSection>
+                    )}
                   </div>
                 </div>
 
