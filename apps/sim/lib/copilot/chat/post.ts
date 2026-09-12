@@ -56,6 +56,7 @@ import {
 import { TraceAttr } from '@/lib/copilot/generated/trace-attributes-v1'
 import { TraceSpan } from '@/lib/copilot/generated/trace-spans-v1'
 import type { VfsSnapshotV1 } from '@/lib/copilot/generated/vfs-snapshot-v1'
+import { LUNA_MODEL } from '@/lib/copilot/luna/envelopes'
 import { createBadRequestResponse, createUnauthorizedResponse } from '@/lib/copilot/request/http'
 import { createSSEStream, SSE_RESPONSE_HEADERS } from '@/lib/copilot/request/lifecycle/start'
 import { startCopilotOtelRoot, withCopilotSpan } from '@/lib/copilot/request/otel'
@@ -1002,7 +1003,8 @@ async function resolveBranch(params: {
     kind: 'workspace',
     workspaceId: requestedWorkspaceId,
     workspacePermission,
-    effectiveModel: DEFAULT_MODEL,
+    // HyperFix chat-light : Luna forcé partout (pas de Go mothership).
+    effectiveModel: LUNA_MODEL,
     goRoute: '/api/mothership',
     titleModel: DEFAULT_MODEL,
     notifyWorkspaceStatus: true,
@@ -1014,7 +1016,7 @@ async function resolveBranch(params: {
           userId: payloadParams.userId,
           userMessageId: payloadParams.userMessageId,
           mode: mode ?? 'agent',
-          model: '',
+          model: LUNA_MODEL,
           contexts: payloadParams.contexts,
           assistantSearch: payloadParams.assistantSearch,
           mcpServerIds: payloadParams.mcpServerIds,
@@ -1032,7 +1034,7 @@ async function resolveBranch(params: {
           terminals: payloadParams.terminals,
           browserSessions: payloadParams.browserSessions,
         },
-        { selectedModel: '' }
+        { selectedModel: LUNA_MODEL }
       ),
     buildExecutionContext: async ({ userId, chatId, userTimezone, messageId }) =>
       buildInitialExecutionContext({

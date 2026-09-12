@@ -994,6 +994,17 @@ async function runCheckpointLoop(
   // gate — Go re-confirms entitlement authoritatively before using any key.
   payload = await withByokEligibilityHint(payload, route, lifecycleWorkspaceId)
 
+  // HyperFix chat-light : boucle Luna locale forcée pour le chat workspace.
+  // Court-circuite tous les legs Go (l'orchestration tourne en-processus via
+  // AgentBlockHandler + provider experiential). Les legs async/resume Go ne
+  // s'appliquent pas (exécution synchrone). Le reste du lifecycle
+  // (persistance, finalize, abort) est inchangé.
+  if (!lifecycleOrganizationId && !!lifecycleWorkspaceId && route !== '/api/tools/resume') {
+    const { runWorkspaceLunaTurn } = await import('@/lib/copilot/luna/local-loop')
+    await runWorkspaceLunaTurn({ payload, context, execContext, options })
+    return
+  }
+
   for (;;) {
     context.streamComplete = false
     const isResume = route === '/api/tools/resume'
