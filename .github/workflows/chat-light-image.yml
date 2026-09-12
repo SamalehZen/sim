@@ -102,14 +102,15 @@ jobs:
           echo "DOCKER_EXIT=${DOCKER_EXIT:-killed-before-echo}"
           if [ -f build.log ]; then python3 - <<'EOF'
           import re
+          apt = re.compile(r'deb\.debian\.org|^(#\d+ [\d.]+ )?(Get:|Selecting|Unpacking|Preparing|Setting up|Reading|Installing|Copy |.*\.deb |.*files$|.*triggers$|.*\.\.\.$)')
           lines = open('build.log', errors='ignore').read().split('\n')
           out = []
           for i, line in enumerate(lines):
               s = line.strip()
-              if not s or 'deb.debian.org' in s:
+              if not s or apt.search(s):
                   continue
-              if re.search(r'error|failed|Error:|ERR_|cannot|not found|Module not found|panic|FATAL|aborted|Killed|exit code: [1-9]|An error occurred', s):
-                  ctx = [l.strip()[:200] for l in lines[max(0,i-4):i] if l.strip() and 'deb.debian.org' not in l]
+              if re.search(r'error|failed|Error:|ERR_|cannot|not found|Module not found|panic|FATAL|aborted|Killed|exit code: [1-9]|An error occurred|ERROR:', s):
+                  ctx = [l.strip()[:200] for l in lines[max(0,i-6):i] if l.strip() and not apt.search(l.strip())]
                   out.append(' >> '.join(ctx + [s[:200]]))
           for l in out[-25:]:
               print(f'::error ::{l[:900]}')
