@@ -8,6 +8,7 @@ import type {
   MothershipStreamV1StreamRef,
   MothershipStreamV1Trace,
 } from '@/lib/copilot/generated/mothership-stream-v1'
+import type { ContextePack } from '@/lib/copilot/luna/context-pack'
 import type { StreamEvent } from '@/lib/copilot/request/session/contract'
 import type { AgentStreamEvent } from '@/providers/stream-events'
 
@@ -114,4 +115,10 @@ export function translateAgentEvent(
     return env.toolResult(event.id, event.name, event.status)
   }
   return null
+}
+
+export function buildLunaSystemPrompt(pack: ContextePack, override?: string): string | undefined {
+  const parts = [pack.system, (override ?? '').trim()].filter((p) => p !== '')
+  if (parts.length === 0) return undefined
+  return parts.join('\n\n')
 }

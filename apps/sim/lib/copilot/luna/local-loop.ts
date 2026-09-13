@@ -22,8 +22,10 @@ import {
   type MothershipStreamV1StreamRef,
   type MothershipStreamV1Trace,
 } from '@/lib/copilot/generated/mothership-stream-v1'
+import { loadContextePack } from '@/lib/copilot/luna/context-pack'
 import {
   buildEnvelopes,
+  buildLunaSystemPrompt,
   LUNA_MODEL,
   LUNA_WORKFLOW_NAME,
   translateAgentEvent,
@@ -381,6 +383,13 @@ export async function runWorkspaceLunaTurn(args: {
     typeof payload.systemPromptOverride === 'string' && payload.systemPromptOverride.trim() !== ''
       ? payload.systemPromptOverride
       : undefined
+  // Pack contexte déclaratif (convention contexte/) + override éventuel.
+  const pack = await loadContextePack(workspaceId, userId).catch(() => ({
+    present: false as const,
+    system: '',
+    truncated: false,
+  }))
+  const finalSystemPrompt = buildLunaSystemPrompt(pack, systemPromptOverride)
 
   const result = await runLocalLunaTurn({
     workspaceId,
@@ -389,7 +398,7 @@ export async function runWorkspaceLunaTurn(args: {
     chatId: options.chatId,
     requestId: options.simRequestId ?? context.requestId ?? 'luna',
     message,
-    ...(systemPromptOverride ? { systemPrompt: systemPromptOverride } : {}),
+    ...(finalSystemPrompt ? { systemPrompt: finalSystemPrompt } : {}),
     ...(options.abortSignal ? { abortSignal: options.abortSignal } : {}),
     onEvent: async (event) => {
       await options.onEvent?.(event)
