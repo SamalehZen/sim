@@ -21,7 +21,7 @@ function parseAttrs(attrString: string | undefined): Record<string, string> {
   const attrs: Record<string, string> = {}
   if (!attrString) return attrs
   for (const match of attrString.matchAll(/(\w+)="([^"]*)"/g)) {
-    attrs[match[1]] = match[2]
+    attrs[match[1]] = match[2].replace(/&quot;/g, '"').replace(/&amp;/g, '&')
   }
   return attrs
 }

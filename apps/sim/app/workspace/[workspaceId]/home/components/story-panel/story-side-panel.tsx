@@ -4,6 +4,8 @@ import { memo, useCallback, useEffect, useState } from 'react'
 import { Button } from '@sim/emcn'
 import { X } from '@sim/emcn/icons'
 import { useParams } from 'next/navigation'
+import { StoryBlocksEditor } from './story-blocks-editor'
+import { StoryCodeEditor } from './story-code-editor'
 import { StoryPreview } from './story-preview'
 
 interface StoryData {
@@ -27,14 +29,17 @@ export const StorySidePanel = memo(function StorySidePanel() {
   const [slug, setSlug] = useState<string | null>(null)
   const [story, setStory] = useState<StoryData | null>(null)
   const [version, setVersion] = useState<number | null>(null)
+  const [viewMode, setViewMode] = useState<'preview' | 'blocks' | 'code'>('preview')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
 
   const close = useCallback(() => {
     setSlug(null)
     setStory(null)
     setVersion(null)
     setError(null)
+    setViewMode('preview')
   }, [])
 
   useEffect(() => {
@@ -81,11 +86,40 @@ export const StorySidePanel = memo(function StorySidePanel() {
     return () => {
       active = false
     }
-  }, [slug, workspaceId, chatId])
+  }, [slug, workspaceId, chatId, refreshKey])
+
+  const handleSaveCode = useCallback(
+    async (code: string) => {
+      if (!slug || !workspaceId || !chatId || !story) return
+      const res = await fetch('/api/stories/version', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workspaceId,
+          chatId,
+          action: 'replace',
+          slug,
+          title: story.title,
+          code,
+        }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => null)
+        throw new Error(typeof err?.error === 'string' ? err.error : `Save failed (${res.status})`)
+      }
+      setVersion(null)
+      setViewMode('preview')
+      setRefreshKey((k) => k + 1)
+    },
+    [slug, workspaceId, chatId, story]
+  )
 
   if (!slug) return null
 
   const activeVersion = version ?? story?.latest?.version ?? null
+  const activeCode =
+    story?.versions?.find((v) => v.version === activeVersion)?.code ?? story?.latest?.code ?? ''
+  const viewingLatest = activeVersion === story?.latest?.version
 
   return (
     <div
@@ -113,6 +147,24 @@ export const StorySidePanel = memo(function StorySidePanel() {
             ))}
           </select>
         )}
+        <div className='flex items-center gap-1' role='tablist' aria-label='Story view'>
+          {(['preview', 'blocks', 'code'] as const).map((mode) => (
+            <button
+              key={mode}
+              type='button'
+              role='tab'
+              aria-selected={viewMode === mode}
+              onClick={() => setViewMode(mode)}
+              className={`rounded-full px-2.5 py-1 text-xs capitalize ${
+                viewMode === mode
+                  ? 'bg-[var(--surface-5)] font-medium'
+                  : 'text-[var(--text-tertiary)]'
+              }`}
+            >
+              {mode}
+            </button>
+          ))}
+        </div>
         <Button
           variant='ghost'
           size='icon'
@@ -133,13 +185,39 @@ export const StorySidePanel = memo(function StorySidePanel() {
         {!loading && !error && !story?.latest && (
           <div className='text-sm text-[var(--text-secondary)]'>No versions yet.</div>
         )}
-        {!loading && !error && story?.latest && activeVersion !== null && (
-          <StoryPreview
-            key={activeVersion}
-            code={
-              story.versions?.find((v) => v.version === activeVersion)?.code ?? story.latest.code
-            }
-          />
+        {!loading &&
+          !error &&
+          story?.latest &&
+          activeVersion !== null &&
+          viewMode === 'preview' && <StoryPreview key={activeVersion} code={activeCode} />}
+        {!loading &&
+          !error &&
+          story?.latest &&
+          activeVersion !== null &&
+          viewingLatest &&
+          viewMode === 'blocks' && (
+            <StoryBlocksEditor
+              key={`blocks-${activeVersion}`}
+              code={activeCode}
+              onSave={handleSaveCode}
+            />
+          )}
+        {!loading &&
+          !error &&
+          story?.latest &&
+          activeVersion !== null &&
+          viewingLatest &&
+          viewMode === 'code' && (
+            <StoryCodeEditor
+              key={`code-${activeVersion}`}
+              code={activeCode}
+              onSave={handleSaveCode}
+            />
+          )}
+        {!viewingLatest && !loading && !error && (
+          <p className='pt-2 text-[var(--text-tertiary)] text-xs'>
+            Viewing an older version — switch to the latest to edit.
+          </p>
         )}
       </div>
     </div>
