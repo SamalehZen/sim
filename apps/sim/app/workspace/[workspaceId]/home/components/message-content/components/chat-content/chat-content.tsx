@@ -40,6 +40,7 @@ import type {
   WorkspaceResourceRef,
 } from '@/app/workspace/[workspaceId]/home/types'
 import { useSmoothText } from '@/hooks/use-smooth-text'
+import { ChatChart } from './chat-chart'
 import { sanitizeChatDisplayContent } from './chat-sanitize'
 import { ExternalLink, externalLinkHostname } from './external-link'
 
@@ -248,208 +249,220 @@ function highlight(code: string, language: string): string {
   return html
 }
 
-const MARKDOWN_COMPONENTS = {
-  table({ children }: { children?: React.ReactNode }) {
-    return (
-      <div className='not-prose my-4 w-full overflow-x-auto [&_strong]:font-semibold'>
-        <table className='min-w-full border-collapse [&_tbody_tr:last-child_td]:border-b-0'>
-          {children}
-        </table>
-      </div>
-    )
-  },
-  thead({ children }: { children?: React.ReactNode }) {
-    return <thead>{children}</thead>
-  },
-  th({ children, style }: ThProps) {
-    return (
-      <th
-        style={style}
-        className='whitespace-nowrap border-[var(--border)] border-b px-3 py-2 text-left font-semibold text-[var(--text-primary)] text-sm leading-6'
-      >
-        {children}
-      </th>
-    )
-  },
-  td({ children, style }: TdProps) {
-    return (
-      <td
-        style={style}
-        className='whitespace-nowrap border-[var(--border)] border-b px-3 py-2 text-[var(--text-primary)] text-sm leading-6'
-      >
-        {children}
-      </td>
-    )
-  },
-  code({ children, className }: { children?: React.ReactNode; className?: string }) {
-    const langMatch = className?.match(/language-(\w+)/)
-    const language = langMatch ? langMatch[1] : ''
-    const codeString = extractTextContent(children)
-
-    if (!codeString) {
+function getMarkdownComponents(chartStreaming: boolean) {
+  return {
+    table({ children }: { children?: React.ReactNode }) {
       return (
-        <pre className='not-prose my-6 overflow-x-auto rounded-lg bg-[var(--surface-5)] p-4 font-mono text-[var(--text-primary)] text-small leading-[21px] dark:bg-[var(--code-bg)]'>
-          <code>{children}</code>
-        </pre>
+        <div className='not-prose my-4 w-full overflow-x-auto [&_strong]:font-semibold'>
+          <table className='min-w-full border-collapse [&_tbody_tr:last-child_td]:border-b-0'>
+            {children}
+          </table>
+        </div>
       )
-    }
-
-    const html = highlight(codeString.trimEnd(), language)
-
-    return (
-      <div className='not-prose my-6 overflow-hidden rounded-lg border border-[var(--border)]'>
-        <div className='flex items-center justify-between border-[var(--border)] border-b bg-[var(--surface-4)] px-4 py-2 dark:bg-[var(--surface-4)]'>
-          <span className='text-[var(--text-tertiary)] text-xs'>{language || 'code'}</span>
-          <CopyCodeButton
-            code={codeString}
-            className='-mr-2 text-[var(--text-tertiary)] hover-hover:bg-[var(--surface-5)] hover-hover:text-[var(--text-secondary)]'
-          />
-        </div>
-        <div className='code-editor-theme bg-[var(--surface-5)] dark:bg-[var(--code-bg)]'>
-          <pre
-            className='m-0 overflow-x-auto whitespace-pre p-4 font-mono text-[var(--text-primary)] text-small leading-[21px]'
-            dangerouslySetInnerHTML={{ __html: html }}
-          />
-        </div>
-      </div>
-    )
-  },
-  a({ children, href }: { children?: React.ReactNode; href?: string }) {
-    if (href?.startsWith(SOURCE_LINK_PREFIX)) {
+    },
+    thead({ children }: { children?: React.ReactNode }) {
+      return <thead>{children}</thead>
+    },
+    th({ children, style }: ThProps) {
       return (
-        <SourceReference index={Number(href.slice(SOURCE_LINK_PREFIX.length))}>
+        <th
+          style={style}
+          className='whitespace-nowrap border-[var(--border)] border-b px-3 py-2 text-left font-semibold text-[var(--text-primary)] text-sm leading-6'
+        >
           {children}
-        </SourceReference>
+        </th>
       )
-    }
-    if (href?.startsWith('#wsres-')) {
-      const match = href.match(/^#wsres-(\w+)-(.+)$/)
-      const type = match?.[1]
-      const ref = match?.[2]
-      const kind = type ? WSRES_LINK_KINDS[type] : undefined
-      const label = extractTextContent(children)
+    },
+    td({ children, style }: TdProps) {
+      return (
+        <td
+          style={style}
+          className='whitespace-nowrap border-[var(--border)] border-b px-3 py-2 text-[var(--text-primary)] text-sm leading-6'
+        >
+          {children}
+        </td>
+      )
+    },
+    code({ children, className }: { children?: React.ReactNode; className?: string }) {
+      const langMatch = className?.match(/language-(\w+)/)
+      const language = langMatch ? langMatch[1] : ''
+      const codeString = extractTextContent(children)
+
+      // HyperFix chat-light (Phase B) : un fence ```chart porte un document
+      // `.chart` (contrat lib/charts/spec) rendu en graphique ECharts.
+      if (language === 'chart') {
+        return <ChatChart content={codeString} isStreaming={chartStreaming} />
+      }
+
+      if (!codeString) {
+        return (
+          <pre className='not-prose my-6 overflow-x-auto rounded-lg bg-[var(--surface-5)] p-4 font-mono text-[var(--text-primary)] text-small leading-[21px] dark:bg-[var(--code-bg)]'>
+            <code>{children}</code>
+          </pre>
+        )
+      }
+
+      const html = highlight(codeString.trimEnd(), language)
+
+      return (
+        <div className='not-prose my-6 overflow-hidden rounded-lg border border-[var(--border)]'>
+          <div className='flex items-center justify-between border-[var(--border)] border-b bg-[var(--surface-4)] px-4 py-2 dark:bg-[var(--surface-4)]'>
+            <span className='text-[var(--text-tertiary)] text-xs'>{language || 'code'}</span>
+            <CopyCodeButton
+              code={codeString}
+              className='-mr-2 text-[var(--text-tertiary)] hover-hover:bg-[var(--surface-5)] hover-hover:text-[var(--text-secondary)]'
+            />
+          </div>
+          <div className='code-editor-theme bg-[var(--surface-5)] dark:bg-[var(--code-bg)]'>
+            <pre
+              className='m-0 overflow-x-auto whitespace-pre p-4 font-mono text-[var(--text-primary)] text-small leading-[21px]'
+              dangerouslySetInnerHTML={{ __html: html }}
+            />
+          </div>
+        </div>
+      )
+    },
+    a({ children, href }: { children?: React.ReactNode; href?: string }) {
+      if (href?.startsWith(SOURCE_LINK_PREFIX)) {
+        return (
+          <SourceReference index={Number(href.slice(SOURCE_LINK_PREFIX.length))}>
+            {children}
+          </SourceReference>
+        )
+      }
+      if (href?.startsWith('#wsres-')) {
+        const match = href.match(/^#wsres-(\w+)-(.+)$/)
+        const type = match?.[1]
+        const ref = match?.[2]
+        const kind = type ? WSRES_LINK_KINDS[type] : undefined
+        const label = extractTextContent(children)
+        return (
+          <a
+            href={href}
+            className={cn(
+              'text-[var(--text-primary)]',
+              kind
+                ? 'not-prose inline-flex items-baseline gap-1 rounded-[5px] bg-[var(--surface-5)] px-[5px] no-underline transition-colors hover-hover:bg-[var(--surface-6)]'
+                : 'underline decoration-dashed underline-offset-4'
+            )}
+            onClick={(e) => {
+              e.preventDefault()
+              if (!type || !ref) return
+              const linkText = label || ref
+              // A file link carries whichever the tag had (`path ?? id`) with no
+              // way to tell them apart here, so it is forwarded as-is and the
+              // resolver tries every interpretation against the real file list.
+              window.dispatchEvent(
+                new CustomEvent('wsres-click', {
+                  detail:
+                    type === 'file'
+                      ? { type, path: ref, title: linkText }
+                      : { type, id: ref, title: linkText },
+                })
+              )
+            }}
+          >
+            {kind && ref && (
+              <ContextMentionIcon
+                context={{ kind, label: kind === 'file' ? fileIconLabel(ref, label) : label }}
+                className='relative top-0.5 size-[12px] shrink-0 text-[var(--text-icon)]'
+              />
+            )}
+            {children}
+          </a>
+        )
+      }
+      const hostname = externalLinkHostname(href)
+      if (hostname && href) {
+        return (
+          <ExternalLink href={href} hostname={hostname}>
+            {children}
+          </ExternalLink>
+        )
+      }
+      if (href?.startsWith('mailto:')) {
+        return (
+          <a href={href} className='not-prose text-[var(--text-primary)] no-underline'>
+            {children}
+          </a>
+        )
+      }
       return (
         <a
           href={href}
-          className={cn(
-            'text-[var(--text-primary)]',
-            kind
-              ? 'not-prose inline-flex items-baseline gap-1 rounded-[5px] bg-[var(--surface-5)] px-[5px] no-underline transition-colors hover-hover:bg-[var(--surface-6)]'
-              : 'underline decoration-dashed underline-offset-4'
-          )}
-          onClick={(e) => {
-            e.preventDefault()
-            if (!type || !ref) return
-            const linkText = label || ref
-            // A file link carries whichever the tag had (`path ?? id`) with no
-            // way to tell them apart here, so it is forwarded as-is and the
-            // resolver tries every interpretation against the real file list.
-            window.dispatchEvent(
-              new CustomEvent('wsres-click', {
-                detail:
-                  type === 'file'
-                    ? { type, path: ref, title: linkText }
-                    : { type, id: ref, title: linkText },
-              })
-            )
-          }}
+          className='text-[var(--text-primary)] underline decoration-dashed underline-offset-4'
+          target='_blank'
+          rel='noopener noreferrer'
         >
-          {kind && ref && (
-            <ContextMentionIcon
-              context={{ kind, label: kind === 'file' ? fileIconLabel(ref, label) : label }}
-              className='relative top-0.5 size-[12px] shrink-0 text-[var(--text-icon)]'
-            />
-          )}
           {children}
         </a>
       )
-    }
-    const hostname = externalLinkHostname(href)
-    if (hostname && href) {
+    },
+    ul({ children, className }: { children?: React.ReactNode; className?: string }) {
+      if (className?.includes('contains-task-list')) {
+        return <ul className='my-4 list-none space-y-2 pl-0'>{children}</ul>
+      }
+      return <ul className='my-4 list-disc pl-5 marker:text-[var(--text-primary)]'>{children}</ul>
+    },
+    ol({ children }: { children?: React.ReactNode }) {
       return (
-        <ExternalLink href={href} hostname={hostname}>
-          {children}
-        </ExternalLink>
+        <ol className='my-4 list-decimal pl-5 marker:text-[var(--text-primary)]'>{children}</ol>
       )
-    }
-    if (href?.startsWith('mailto:')) {
+    },
+    li({ children, className }: { children?: React.ReactNode; className?: string }) {
+      if (className?.includes('task-list-item')) {
+        return (
+          <li className='flex list-none items-start gap-2 text-[var(--text-primary)] text-base leading-[25px] [&>p:only-child]:inline [&>p]:my-0'>
+            {children}
+          </li>
+        )
+      }
       return (
-        <a href={href} className='not-prose text-[var(--text-primary)] no-underline'>
-          {children}
-        </a>
-      )
-    }
-    return (
-      <a
-        href={href}
-        className='text-[var(--text-primary)] underline decoration-dashed underline-offset-4'
-        target='_blank'
-        rel='noopener noreferrer'
-      >
-        {children}
-      </a>
-    )
-  },
-  ul({ children, className }: { children?: React.ReactNode; className?: string }) {
-    if (className?.includes('contains-task-list')) {
-      return <ul className='my-4 list-none space-y-2 pl-0'>{children}</ul>
-    }
-    return <ul className='my-4 list-disc pl-5 marker:text-[var(--text-primary)]'>{children}</ul>
-  },
-  ol({ children }: { children?: React.ReactNode }) {
-    return <ol className='my-4 list-decimal pl-5 marker:text-[var(--text-primary)]'>{children}</ol>
-  },
-  li({ children, className }: { children?: React.ReactNode; className?: string }) {
-    if (className?.includes('task-list-item')) {
-      return (
-        <li className='flex list-none items-start gap-2 text-[var(--text-primary)] text-base leading-[25px] [&>p:only-child]:inline [&>p]:my-0'>
+        <li className='my-1 text-[var(--text-primary)] text-base leading-[25px] marker:text-[var(--text-primary)] [&>p:only-child]:inline [&>p]:my-0'>
           {children}
         </li>
       )
-    }
-    return (
-      <li className='my-1 text-[var(--text-primary)] text-base leading-[25px] marker:text-[var(--text-primary)] [&>p:only-child]:inline [&>p]:my-0'>
-        {children}
-      </li>
-    )
-  },
-  inlineCode({ children }: { children?: React.ReactNode }) {
-    return (
-      <code className='whitespace-normal rounded bg-[var(--surface-5)] px-1.5 py-0.5 font-mono font-normal text-[var(--text-primary)] not-italic before:content-none after:content-none'>
-        {children}
-      </code>
-    )
-  },
-  blockquote({ children }: { children?: React.ReactNode }) {
-    return (
-      <blockquote className='my-4 break-words border-[var(--border)] border-l-2 pl-4 text-[var(--text-primary)] italic [&>p:first-child]:mt-0 [&>p:last-child]:mb-0 [&>p]:my-2'>
-        {children}
-      </blockquote>
-    )
-  },
-  input({ type, checked }: { type?: string; checked?: boolean }) {
-    if (type === 'checkbox') {
-      return <Checkbox checked={checked || false} disabled size='sm' className='mt-1.5 shrink-0' />
-    }
-    return <input type={type} checked={checked} readOnly />
-  },
-  em({ children }: { children?: React.ReactNode }) {
-    return <em className='text-[var(--text-primary)] italic'>{children}</em>
-  },
-  del({ children }: { children?: React.ReactNode }) {
-    return <del className='text-[var(--text-tertiary)] line-through'>{children}</del>
-  },
-  img({ src, alt }: ComponentPropsWithoutRef<'img'>) {
-    if (typeof src !== 'string' || !src) return null
-    return (
-      <img
-        src={src}
-        alt={alt ?? ''}
-        loading='lazy'
-        className='my-4 h-auto max-w-full rounded-lg border border-[var(--border)]'
-      />
-    )
-  },
+    },
+    inlineCode({ children }: { children?: React.ReactNode }) {
+      return (
+        <code className='whitespace-normal rounded bg-[var(--surface-5)] px-1.5 py-0.5 font-mono font-normal text-[var(--text-primary)] not-italic before:content-none after:content-none'>
+          {children}
+        </code>
+      )
+    },
+    blockquote({ children }: { children?: React.ReactNode }) {
+      return (
+        <blockquote className='my-4 break-words border-[var(--border)] border-l-2 pl-4 text-[var(--text-primary)] italic [&>p:first-child]:mt-0 [&>p:last-child]:mb-0 [&>p]:my-2'>
+          {children}
+        </blockquote>
+      )
+    },
+    input({ type, checked }: { type?: string; checked?: boolean }) {
+      if (type === 'checkbox') {
+        return (
+          <Checkbox checked={checked || false} disabled size='sm' className='mt-1.5 shrink-0' />
+        )
+      }
+      return <input type={type} checked={checked} readOnly />
+    },
+    em({ children }: { children?: React.ReactNode }) {
+      return <em className='text-[var(--text-primary)] italic'>{children}</em>
+    },
+    del({ children }: { children?: React.ReactNode }) {
+      return <del className='text-[var(--text-tertiary)] line-through'>{children}</del>
+    },
+    img({ src, alt }: ComponentPropsWithoutRef<'img'>) {
+      if (typeof src !== 'string' || !src) return null
+      return (
+        <img
+          src={src}
+          alt={alt ?? ''}
+          loading='lazy'
+          className='my-4 h-auto max-w-full rounded-lg border border-[var(--border)]'
+        />
+      )
+    },
+  }
 }
 
 interface ChatContentProps {
@@ -584,6 +597,10 @@ function ChatContentInner({
   const parserTree = isRevealing || streamedThisSession
   const streamingTree = parserTree && !animationDrained
 
+  // Identité stable sauf bascule du reveal : recréer l'objet à chaque
+  // keystroke remonterait tout le markdown à chaque frame du stream.
+  const markdownComponents = useMemo(() => getMarkdownComponents(isRevealing), [isRevealing])
+
   /**
    * One-way fade cutoff (see {@link FADE_MAX_REVEALED_CHARS}). Latched so a
    * sanitize-induced content shrink back across the boundary cannot re-arm
@@ -712,7 +729,7 @@ function ChatContentInner({
                   mode={parserTree ? undefined : 'static'}
                   animated={fadeActive ? STREAM_ANIMATION : false}
                   isAnimating={streamingTree}
-                  components={MARKDOWN_COMPONENTS}
+                  components={markdownComponents}
                 >
                   {group.markdown}
                 </Streamdown>
