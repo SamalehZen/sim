@@ -9,7 +9,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@sim/emcn'
-import { ChartColumn, Code, Download, List } from '@sim/emcn/icons'
+import { ChartColumn, Code, Download, List, Pencil } from '@sim/emcn/icons'
 import { useParams } from 'next/navigation'
 import {
   DATE_RANGE_OPTIONS,
@@ -27,6 +27,7 @@ import {
 } from '@/lib/charts/spec'
 import { downloadCsv, downloadXlsx, tableToCsv } from '@/lib/table-export'
 import { useTable, useTableRowsSample } from '@/hooks/queries/tables'
+import { ChartConfigEditDialog, type EditableChartInput } from '../chart-display/chart-edit-dialog'
 import { ChartRangeSelector } from '../chart-display/chart-range-selector'
 import { ChartDisplay } from '../chart-display/chart-view'
 import { TableDisplay } from '../chart-display/display-table'
@@ -175,7 +176,7 @@ async function downloadChartPng(
 }
 
 function ChatChartBody({
-  input,
+  input: inputProp,
   rows,
   waitingOnRows,
   viewMode,
@@ -197,9 +198,14 @@ function ChatChartBody({
   isTableVariant: boolean
   workspaceId: string
 }) {
-  const title = input.title ?? 'chart'
   const [isDownloading, setIsDownloading] = useState(false)
   const [downloadError, setDownloadError] = useState<string | null>(null)
+  const [isEditOpen, setIsEditOpen] = useState(false)
+  const [isSavingEdit, setIsSavingEdit] = useState(false)
+  const [editError, setEditError] = useState<string | null>(null)
+  const [editedInput, setEditedInput] = useState<displayChart.Input | null>(null)
+  const input = editedInput ?? inputProp
+  const title = input.title ?? 'chart'
 
   const handleDownloadPng = async () => {
     if (!rows || rows.length === 0) return
@@ -211,6 +217,28 @@ function ChatChartBody({
       setDownloadError(error instanceof Error ? error.message : 'PNG export failed')
     } finally {
       setIsDownloading(false)
+    }
+  }
+
+  const handleSaveEdit = async (next: EditableChartInput) => {
+    setIsSavingEdit(true)
+    setEditError(null)
+    try {
+      const newFence = `\`\`\`chart\n${JSON.stringify(next)}\n\`\`\``
+      const response = await fetch('/api/charts/fence', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspaceId, oldFence: content, newFence }),
+      })
+      if (!response.ok) {
+        throw new Error(`Save failed (${response.status})`)
+      }
+      setEditedInput(next)
+    } catch (error) {
+      setEditError(error instanceof Error ? error.message : 'Save failed')
+      throw error
+    } finally {
+      setIsSavingEdit(false)
     }
   }
 
@@ -368,6 +396,30 @@ function ChatChartBody({
               {downloadError}
             </span>
           )}
+          {editError && (
+            <span className='text-[var(--text-error)] text-xs' role='alert'>
+              {editError}
+            </span>
+          )}
+          {displayChart.isBuiltinChartType(input.chart_type) && (
+            <Button
+              variant='ghost'
+              size='icon'
+              className='rounded-full'
+              onClick={() => {
+                setEditError(null)
+                setIsEditOpen(true)
+              }}
+              title='Edit chart'
+            >
+              <Pencil className='size-3' />
+            </Button>
+          )}
+          {editError && (
+            <span className='text-[var(--text-error)] text-xs' role='alert'>
+              {editError}
+            </span>
+          )}
         </div>
       </div>
 
@@ -403,6 +455,18 @@ function ChatChartBody({
           showDataLabels={input.show_data_labels}
           comparisonMode={'comparison_mode' in input ? input.comparison_mode : undefined}
           hideTotal={input.hide_total}
+        />
+      )}
+      {displayChart.isBuiltinChartType(input.chart_type) && (
+        <ChartConfigEditDialog
+          open={isEditOpen}
+          onOpenChange={setIsEditOpen}
+          config={{ ...input, chart_type: input.chart_type }}
+          availableColumns={columns}
+          data={rows}
+          onSave={handleSaveEdit}
+          isSaving={isSavingEdit}
+          description='Tweak the chart parameters. Changes are saved to the chat.'
         />
       )}
     </div>
