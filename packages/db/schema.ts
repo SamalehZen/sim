@@ -3541,6 +3541,52 @@ export const copilotWorkflowReadHashes = pgTable(
   })
 )
 
+/**
+ * HyperFix chat-light (Phase C) : stories de conversation, façon nao
+ * (`story` + `storyVersion`). Une story appartient à un chat (portée
+ * workspace via la jointure) ; chaque modification crée une version
+ * immuable (create/update/replace de l'outil Luna).
+ */
+export const chatStory = pgTable(
+  'chat_stories',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    chatId: uuid('chat_id')
+      .notNull()
+      .references(() => copilotChats.id, { onDelete: 'cascade' }),
+    slug: text('slug').notNull(),
+    title: text('title').notNull(),
+    createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    chatSlugUnique: uniqueIndex('chat_stories_chat_slug_unique').on(table.chatId, table.slug),
+    chatIdIdx: index('chat_stories_chat_id_idx').on(table.chatId),
+  })
+)
+
+export const chatStoryVersion = pgTable(
+  'chat_story_versions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    storyId: uuid('story_id')
+      .notNull()
+      .references(() => chatStory.id, { onDelete: 'cascade' }),
+    version: integer('version').notNull(),
+    code: text('code').notNull(),
+    createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    storyVersionUnique: uniqueIndex('chat_story_versions_story_version_unique').on(
+      table.storyId,
+      table.version
+    ),
+    storyIdIdx: index('chat_story_versions_story_id_idx').on(table.storyId),
+  })
+)
+
 export const workflowCheckpoints = pgTable(
   'workflow_checkpoints',
   {
