@@ -35,6 +35,7 @@ import {
 import { captureEvent } from '@/lib/posthog/client'
 import { persistImportedWorkflow } from '@/lib/workflows/operations/import-export'
 import { RESOURCE_HEADER_CLASSES } from '@/app/workspace/[workspaceId]/home/components/mothership-view/components/resource-tabs/resource-tab-controls'
+import { StorySidePanel } from '@/app/workspace/[workspaceId]/home/components/story-panel/story-side-panel'
 import { SuggestedActions } from '@/app/workspace/[workspaceId]/home/components/suggested-actions'
 import { useBrowserTabResources } from '@/app/workspace/[workspaceId]/home/hooks/use-browser-tab-resources'
 import { useTerminalTabResources } from '@/app/workspace/[workspaceId]/home/hooks/use-terminal-tab-resources'
@@ -790,6 +791,9 @@ export function Home({ chatId, userName, userId }: HomeProps) {
           </span>
         </Button>
       </div>
+
+      {/* HyperFix chat-light (Phase C) : panneau latéral story, façon nao. */}
+      <StorySidePanel />
     </div>
   )
 }

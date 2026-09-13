@@ -21,6 +21,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
     const workspaceId = searchParams.get('workspaceId') ?? ''
     const chatId = searchParams.get('chatId') ?? ''
     const slug = searchParams.get('slug') ?? ''
+    const includeVersions = searchParams.get('includeVersions') === 'true'
     if (!workspaceId || !chatId) {
       return NextResponse.json({ error: 'workspaceId and chatId are required' }, { status: 400 })
     }
@@ -53,7 +54,19 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
           .where(eq(chatStoryVersion.storyId, story.id))
           .orderBy(desc(chatStoryVersion.version))
           .limit(1)
-        return { ...story, latest: latest ?? null }
+        let versions: { version: number; code: string; createdAt: Date }[] | undefined
+        if (includeVersions) {
+          versions = await db
+            .select({
+              version: chatStoryVersion.version,
+              code: chatStoryVersion.code,
+              createdAt: chatStoryVersion.createdAt,
+            })
+            .from(chatStoryVersion)
+            .where(eq(chatStoryVersion.storyId, story.id))
+            .orderBy(desc(chatStoryVersion.version))
+        }
+        return { ...story, latest: latest ?? null, ...(versions ? { versions } : {}) }
       })
     )
 
