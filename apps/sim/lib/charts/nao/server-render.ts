@@ -5,8 +5,8 @@
  * le format de dates est le défaut (pas de réglages projet).
  */
 
+import { createRequire } from 'node:module'
 import React from 'react'
-import { renderToString } from 'react-dom/server'
 import { bucketPieData, buildChart, defaultColorFor, labelize } from './chart-builder'
 import { DEFAULT_DATE_FORMAT_SETTINGS } from './date'
 import * as displayChart from './display-chart'
@@ -17,6 +17,16 @@ import {
   svgToPng,
   VERTICAL_LEGEND_WIDTH,
 } from './svg-render'
+
+/**
+ * `react-dom/server` en require runtime (jamais d'import statique) :
+ * Turbopack refuse les imports statiques first-party de react-dom/server
+ * dans le graphe de route (précédent repo : require runtime uniquement).
+ */
+const requireNode = createRequire(import.meta.url)
+const { renderToString } = requireNode('react-dom/server') as {
+  renderToString: (element: React.ReactElement) => string
+}
 
 export interface RenderChartInput {
   config: displayChart.BuiltinChartInput | displayChart.KpiCardInput
