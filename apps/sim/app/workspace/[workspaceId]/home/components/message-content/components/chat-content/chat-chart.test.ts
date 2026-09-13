@@ -43,4 +43,24 @@ describe('chat chart contract', () => {
     })
     expect(result.success).toBe(true)
   })
+
+  it('renders the skill example to PNG bytes server-side', async () => {
+    const { generateChartImage } = await import('@/lib/charts/nao/server-render')
+    const parsed = displayChart.InputSchema.safeParse(SKILL_EXAMPLE)
+    expect(parsed.success).toBe(true)
+    if (!parsed.success) return
+    const input = parsed.data
+    if (!displayChart.isChartInput(input) || !displayChart.isBuiltinChartType(input.chart_type)) {
+      return
+    }
+    const png = generateChartImage({
+      config: { ...input, chart_type: input.chart_type },
+      data: [
+        { nom: 'Ada', score: 95 },
+        { nom: 'Alan', score: 88 },
+      ],
+    })
+    expect(png.length).toBeGreaterThan(1000)
+    expect([...png.slice(0, 4)]).toEqual([0x89, 0x50, 0x4e, 0x47])
+  })
 })

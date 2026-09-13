@@ -146,9 +146,33 @@ export const ChatChart = memo(function ChatChart({
       setDataRange={setDataRange}
       content={content}
       isTableVariant={isTableVariant}
+      workspaceId={workspaceId ?? ''}
     />
   )
 })
+
+async function downloadChartPng(
+  workspaceId: string,
+  input: displayChart.Input,
+  rows: Record<string, unknown>[],
+  title: string
+): Promise<void> {
+  const response = await fetch('/api/charts/png', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ workspaceId, input, rows: rows.slice(0, 2000) }),
+  })
+  if (!response.ok) {
+    throw new Error(`PNG export failed (${response.status})`)
+  }
+  const blob = await response.blob()
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `${title || 'chart'}.png`
+  link.click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
 
 function ChatChartBody({
   input,
@@ -160,6 +184,7 @@ function ChatChartBody({
   setDataRange,
   content,
   isTableVariant,
+  workspaceId,
 }: {
   input: displayChart.Input
   rows: Record<string, unknown>[] | null
@@ -170,8 +195,24 @@ function ChatChartBody({
   setDataRange: (range: DateRange) => void
   content: string
   isTableVariant: boolean
+  workspaceId: string
 }) {
   const title = input.title ?? 'chart'
+  const [isDownloading, setIsDownloading] = useState(false)
+  const [downloadError, setDownloadError] = useState<string | null>(null)
+
+  const handleDownloadPng = async () => {
+    if (!rows || rows.length === 0) return
+    setIsDownloading(true)
+    setDownloadError(null)
+    try {
+      await downloadChartPng(workspaceId, input, rows, title)
+    } catch (error) {
+      setDownloadError(error instanceof Error ? error.message : 'PNG export failed')
+    } finally {
+      setIsDownloading(false)
+    }
+  }
 
   if (isTableVariant && displayChart.isTableInput(input)) {
     if (!rows) {
@@ -289,7 +330,18 @@ function ChatChartBody({
             >
               <Code className='size-3' />
             </ViewButton>
-            {viewMode !== 'chart' && (
+            {viewMode === 'chart' ? (
+              <Button
+                variant='ghost'
+                size='icon'
+                className='rounded-full'
+                onClick={() => void handleDownloadPng()}
+                disabled={isDownloading}
+                title='Download as PNG'
+              >
+                <Download className='size-3' />
+              </Button>
+            ) : (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant='ghost' size='icon' className='rounded-full' title='Export data'>
@@ -311,6 +363,11 @@ function ChatChartBody({
               </DropdownMenu>
             )}
           </div>
+          {downloadError && (
+            <span className='text-[var(--text-error)] text-xs' role='alert'>
+              {downloadError}
+            </span>
+          )}
         </div>
       </div>
 
