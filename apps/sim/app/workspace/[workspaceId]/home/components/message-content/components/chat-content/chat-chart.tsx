@@ -9,7 +9,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@sim/emcn'
-import { ChartColumn, Code, Download, List, Pencil } from '@sim/emcn/icons'
+import { ChartColumn, Code, Download, FolderPlus, List, Pencil } from '@sim/emcn/icons'
 import { useParams } from 'next/navigation'
 import {
   DATE_RANGE_OPTIONS,
@@ -25,7 +25,9 @@ import {
   mapRowsToColumnNames,
   shapeTableRows,
 } from '@/lib/charts/spec'
+import { buildStoryChartBlock } from '@/lib/stories/story-code'
 import { downloadCsv, downloadXlsx, tableToCsv } from '@/lib/table-export'
+import { useChatStorySlugs } from '@/app/workspace/[workspaceId]/home/components/story-panel/use-chat-stories'
 import { useTable, useTableRowsSample } from '@/hooks/queries/tables'
 import { ChartConfigEditDialog, type EditableChartInput } from '../chart-display/chart-edit-dialog'
 import { ChartRangeSelector } from '../chart-display/chart-range-selector'
@@ -49,8 +51,9 @@ export const ChatChart = memo(function ChatChart({
 }) {
   const [viewMode, setViewMode] = useState<ViewMode>('chart')
   const [dataRange, setDataRange] = useState<DateRange>('all')
-  const params = useParams<{ workspaceId?: string }>()
+  const params = useParams<{ workspaceId?: string; chatId?: string }>()
   const workspaceId = params?.workspaceId
+  const chatId = params?.chatId
 
   const parsed: { input: displayChart.Input } | { error: string } = useMemo(() => {
     let raw: unknown
@@ -148,6 +151,7 @@ export const ChatChart = memo(function ChatChart({
       content={content}
       isTableVariant={isTableVariant}
       workspaceId={workspaceId ?? ''}
+      chatId={chatId ?? ''}
     />
   )
 })
@@ -186,6 +190,7 @@ function ChatChartBody({
   content,
   isTableVariant,
   workspaceId,
+  chatId,
 }: {
   input: displayChart.Input
   rows: Record<string, unknown>[] | null
@@ -197,15 +202,19 @@ function ChatChartBody({
   content: string
   isTableVariant: boolean
   workspaceId: string
+  chatId: string
 }) {
   const [isDownloading, setIsDownloading] = useState(false)
   const [downloadError, setDownloadError] = useState<string | null>(null)
   const [isEditOpen, setIsEditOpen] = useState(false)
   const [isSavingEdit, setIsSavingEdit] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
+  const [isAddingToStory, setIsAddingToStory] = useState(false)
+  const [storyError, setStoryError] = useState<string | null>(null)
   const [editedInput, setEditedInput] = useState<displayChart.Input | null>(null)
   const input = editedInput ?? inputProp
   const title = input.title ?? 'chart'
+  const storySlugs = useChatStorySlugs(workspaceId || undefined, chatId || undefined)
 
   const handleDownloadPng = async () => {
     if (!rows || rows.length === 0) return
@@ -239,6 +248,46 @@ function ChatChartBody({
       throw error
     } finally {
       setIsSavingEdit(false)
+    }
+  }
+
+  // B2-e : ajoute le graphique à la dernière story du chat (façon nao
+  // `handleAddToStory`, simplifié : ajout en fin de code, pas d'onglet actif).
+  const handleAddToStory = async () => {
+    const targetSlug = storySlugs[storySlugs.length - 1]
+    if (!targetSlug || !workspaceId || !chatId) return
+    setIsAddingToStory(true)
+    setStoryError(null)
+    try {
+      const listRes = await fetch(
+        `/api/stories?workspaceId=${encodeURIComponent(workspaceId)}&chatId=${encodeURIComponent(chatId)}&slug=${encodeURIComponent(targetSlug)}`
+      )
+      if (!listRes.ok) throw new Error(`Stories unavailable (${listRes.status})`)
+      const data = await listRes.json()
+      const currentCode = (data?.stories?.[0]?.latest?.code ?? '') as string
+      const nextCode = `${currentCode.replace(/\s+$/, '')}\n${buildStoryChartBlock(input)}\n`
+      const saveRes = await fetch('/api/stories/version', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workspaceId,
+          chatId,
+          action: 'replace',
+          slug: targetSlug,
+          code: nextCode,
+        }),
+      })
+      if (!saveRes.ok) {
+        const err = await saveRes.json().catch(() => null)
+        throw new Error(
+          typeof err?.error === 'string' ? err.error : `Save failed (${saveRes.status})`
+        )
+      }
+      window.dispatchEvent(new CustomEvent('story-open', { detail: { slug: targetSlug } }))
+    } catch (error) {
+      setStoryError(error instanceof Error ? error.message : 'Add to story failed')
+    } finally {
+      setIsAddingToStory(false)
     }
   }
 
@@ -390,10 +439,27 @@ function ChatChartBody({
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
+            {storySlugs.length > 0 && (
+              <Button
+                variant='ghost'
+                size='icon'
+                className='rounded-full'
+                onClick={() => void handleAddToStory()}
+                disabled={isAddingToStory || !rows || rows.length === 0}
+                title='Add to story'
+              >
+                <FolderPlus className='size-3' />
+              </Button>
+            )}
           </div>
           {downloadError && (
             <span className='text-[var(--text-error)] text-xs' role='alert'>
               {downloadError}
+            </span>
+          )}
+          {storyError && (
+            <span className='text-[var(--text-error)] text-xs' role='alert'>
+              {storyError}
             </span>
           )}
           {editError && (
