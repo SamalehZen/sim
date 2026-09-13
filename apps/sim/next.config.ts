@@ -130,6 +130,13 @@ const nextConfig: NextConfig = {
     '@tiptap/extension-paragraph',
     '@tiptap/extension-table',
     '@tiptap/extension-highlight',
+    // HyperFix chat-light: server-side chart PNG rendering (route /api/charts/png).
+    // @resvg/resvg-js ships a native binding Turbopack cannot place in ESM chunks;
+    // recharts carries 'use client' directives that confuse the server-graph analysis
+    // (react-dom/server import flagged). Both are server-only here — external native require.
+    '@resvg/resvg-js',
+    'recharts',
+    'cheerio',
   ],
   outputFileTracingIncludes: {
     // The seed, merge, and persist endpoints all lazily `require('jsdom')` (via the collab-doc
