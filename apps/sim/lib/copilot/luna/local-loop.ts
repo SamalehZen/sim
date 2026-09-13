@@ -17,6 +17,7 @@ import { db } from '@sim/db'
 import { copilotMessages, credential, mcpServers, workflow } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, asc, eq, isNotNull, isNull } from 'drizzle-orm'
+import { prepareCopilotEnvironmentContext } from '@/lib/copilot/environment-context'
 import {
   MothershipStreamV1CompletionStatus,
   type MothershipStreamV1StreamRef,
@@ -36,13 +37,20 @@ import type {
   ExecutionContext as CopilotExecutionContext,
   StreamingContext,
 } from '@/lib/copilot/request/types'
+import { getOperationOptionIds } from '@/lib/permission-groups/operation-access'
 import { performCreateWorkflowTransition } from '@/lib/workflows/orchestration/workflow-lifecycle'
+import { getBlock } from '@/blocks/registry'
 import { BLOCK_REGISTRY } from '@/blocks/registry-maps'
 import type { BlockOutput } from '@/blocks/types'
 import { BlockType } from '@/executor/constants'
 import { AgentBlockHandler } from '@/executor/handlers/agent/agent-handler'
 import type { Message as AgentMessage, ToolInput } from '@/executor/handlers/agent/types'
-import type { ExecutionContext, StreamingExecution } from '@/executor/types'
+import type {
+  ExecutionContext,
+  ExecutorDelegationOrigin,
+  StreamingExecution,
+} from '@/executor/types'
+import type { ResolvedSecretTraceRegistry } from '@/executor/utils/resolved-secret-trace-registry'
 import type { AgentStreamEvent } from '@/providers/stream-events'
 import type { SerializedBlock } from '@/serializer/types'
 
@@ -115,6 +123,10 @@ export interface LunaTurnInput {
   /** Dernier message utilisateur (texte brut). */
   message: string
   systemPrompt?: string
+  /** Origine de délégation (chemin chat normal la fournit ; défaut sujet direct). */
+  executorDelegationOrigin?: ExecutorDelegationOrigin
+  /** Registry de traçabilité des secrets (obligatoire : sans lui les outils échouent). */
+  resolvedSecretTraceRegistry?: ResolvedSecretTraceRegistry
   abortSignal?: AbortSignal
   onEvent: (event: StreamEvent) => void | Promise<void>
 }
@@ -203,6 +215,95 @@ async function loadTranscript(chatId: string, limit = 30): Promise<AgentMessage[
   return out.slice(-limit)
 }
 
+/** Opérations en lecture seule exposées à Luna v1 (pas d'écriture sans approbation UI). */
+const READ_OP = /read|query|get|search|list|fetch|describe|view|show/i
+const WRITE_OP = /write|delete|update|append|insert|send|create|remove|post|publish|execute/i
+
+function isReadOperation(operation: string): boolean {
+  return READ_OP.test(operation) && !WRITE_OP.test(operation)
+}
+
+/**
+ * Entrées d'outils `{type, operation}` par bloc : seules les opérations de
+ * lecture (jamais d'écriture sans UI d'approbation). Capées pour le contexte.
+ * Les blocs sans menu d'opération (ex. file → file_read par défaut) sont
+ * ajoutés nus : le sélecteur d'outil retombe sur `access[0]`.
+ */
+function readOnlyToolEntries(blockTypes: string[]): ToolInput[] {
+  const entries: ToolInput[] = []
+  for (const type of blockTypes) {
+    let block
+    try {
+      block = getBlock(type)
+    } catch {
+      continue
+    }
+    if (!block) continue
+    const operations = getOperationOptionIds(block)
+    if (operations.length === 0) {
+      entries.push({ type, usageControl: 'auto' } as ToolInput)
+      continue
+    }
+    for (const operation of operations) {
+      if (!isReadOperation(operation)) continue
+      entries.push({ type, operation, usageControl: 'auto' } as ToolInput)
+      if (entries.length >= 60) return entries
+    }
+  }
+  return entries
+}
+
+/** Inventaire minimal d'une table Sim pour liaison d'outils + prompt. */
+export interface LunaTableInventory {
+  id: string
+  name: string
+  rowCount: number
+}
+
+/**
+ * Tables du workspace (lecture directe, session déjà autorisée).
+ * Sert à lier les outils table (`tableId` est `user-only` : le modèle ne peut
+ * pas le fournir, il doit être pré-rempli comme le fait le picker).
+ */
+export async function listLunaTables(workspaceId: string): Promise<LunaTableInventory[]> {
+  try {
+    const { listTables } = await import('@/lib/table')
+    const tables = await listTables(workspaceId, {})
+    return tables.slice(0, 10).map((t) => ({ id: t.id, name: t.name, rowCount: t.rowCount }))
+  } catch (error) {
+    logger.warn('Tables du workspace illisibles, outils table ignorés', {
+      workspaceId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return []
+  }
+}
+
+/** Une entrée query_rows + get_schema liées par table (capées pour le contexte). */
+function boundTableEntries(tables: LunaTableInventory[]): ToolInput[] {
+  const entries: ToolInput[] = []
+  for (const table of tables) {
+    for (const operation of ['query_rows', 'get_schema']) {
+      entries.push({
+        type: 'table',
+        operation,
+        params: { tableId: table.id },
+        title: `Table ${table.name}`,
+        usageControl: 'auto',
+      } as ToolInput)
+      if (entries.length >= 20) return entries
+    }
+  }
+  return entries
+}
+
+/** Ligne d'inventaire injectée au prompt système pour nommer les tables. */
+export function tableInventoryPrompt(tables: LunaTableInventory[]): string {
+  if (tables.length === 0) return ''
+  const lines = tables.map((t) => `- ${t.name} (${t.rowCount} lignes)`)
+  return `Tables du workspace (utilise tes outils table pour les lire) :\n${lines.join('\n')}`
+}
+
 export async function runLocalLunaTurn(input: LunaTurnInput): Promise<LunaTurnResult> {
   const {
     workspaceId,
@@ -213,6 +314,8 @@ export async function runLocalLunaTurn(input: LunaTurnInput): Promise<LunaTurnRe
     requestId,
     message,
     systemPrompt,
+    executorDelegationOrigin,
+    resolvedSecretTraceRegistry,
     abortSignal,
     onEvent,
   } = input
@@ -260,7 +363,8 @@ export async function runLocalLunaTurn(input: LunaTurnInput): Promise<LunaTurnRe
   }
 
   const tools: ToolInput[] = [
-    ...services.map((service) => ({ type: service }) as ToolInput),
+    ...readOnlyToolEntries([...services, 'file', 'knowledge']),
+    ...boundTableEntries(await listLunaTables(workspaceId)),
     ...mcpServerIds.map(
       (serverId) =>
         ({
@@ -268,10 +372,13 @@ export async function runLocalLunaTurn(input: LunaTurnInput): Promise<LunaTurnRe
           params: { serverId },
         }) as ToolInput
     ),
-    { type: 'file' } as ToolInput,
-    { type: 'knowledge' } as ToolInput,
-    { type: 'table' } as ToolInput,
   ]
+  logger.info('Outils Luna assemblés', {
+    workspaceId,
+    services,
+    mcpServers: mcpServerIds.length,
+    toolEntries: tools.length,
+  })
 
   const block: SerializedBlock = {
     id: `luna-chat-${executionId}`,
@@ -289,6 +396,18 @@ export async function runLocalLunaTurn(input: LunaTurnInput): Promise<LunaTurnRe
     executionId,
     userId,
     ...(principal ? { principal } : {}),
+    // Autorité d'exécution exigée par l'enrichissement des schémas d'outils
+    // (tables, KB) : même défaut que le chemin Go (sujet direct). Sans
+    // executionId : il pointerait vers un run inexistant (pas de ligne
+    // d'exécution en boucle locale) et la délégation serait rejetée.
+    executorDelegationOrigin: executorDelegationOrigin ?? {
+      subjectUserId: userId,
+      workflowId: lunaWorkflowId,
+    },
+    // Traçabilité des secrets exigée par l'exécution des outils : sans
+    // registry, le garde-fou providers/runtime-context fait échouer chaque
+    // appel silencieusement (success:false sans message).
+    ...(resolvedSecretTraceRegistry ? { resolvedSecretTraceRegistry } : {}),
     copilotToolExecution: true,
     blockStates: new Map(),
     executedBlocks: new Set<string>(),
@@ -320,6 +439,8 @@ export async function runLocalLunaTurn(input: LunaTurnInput): Promise<LunaTurnRe
     await onEvent(env.complete('error'))
     return { status: 'error', text: '' }
   }
+  // Les exécutions d'outils sont internes à la boucle agent (aucun événement
+  // tool sur le stream v1) : la preuve fonctionnelle vit dans les smoke tests.
 
   const streaming: StreamingExecution | null =
     typeof result === 'object' &&
@@ -389,7 +510,16 @@ export async function runWorkspaceLunaTurn(args: {
     system: '',
     truncated: false,
   }))
-  const finalSystemPrompt = buildLunaSystemPrompt(pack, systemPromptOverride)
+  const inventory = tableInventoryPrompt(await listLunaTables(workspaceId))
+  const finalSystemPrompt = [buildLunaSystemPrompt(pack, systemPromptOverride), inventory]
+    .filter((p) => p && p.trim() !== '')
+    .join('\n\n')
+
+  // Même source que le chemin chat normal (run.ts ensureModelEgressRegistry).
+  const resolvedSecretTraceRegistry =
+    options.resolvedSecretTraceRegistry ??
+    options.environmentContext?.resolvedSecretTraceRegistry ??
+    (await prepareCopilotEnvironmentContext(userId, workspaceId)).resolvedSecretTraceRegistry
 
   const result = await runLocalLunaTurn({
     workspaceId,
@@ -399,6 +529,10 @@ export async function runWorkspaceLunaTurn(args: {
     requestId: options.simRequestId ?? context.requestId ?? 'luna',
     message,
     ...(finalSystemPrompt ? { systemPrompt: finalSystemPrompt } : {}),
+    resolvedSecretTraceRegistry,
+    ...(options.executorDelegationOrigin
+      ? { executorDelegationOrigin: options.executorDelegationOrigin }
+      : {}),
     ...(options.abortSignal ? { abortSignal: options.abortSignal } : {}),
     onEvent: async (event) => {
       await options.onEvent?.(event)
