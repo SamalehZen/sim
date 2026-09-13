@@ -3,7 +3,6 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth'
 import { InputSchema, isBuiltinChartType, isChartInput } from '@/lib/charts/nao/display-chart'
-import { generateChartImage } from '@/lib/charts/nao/server-render'
 import { enforceUserRateLimit } from '@/lib/core/rate-limiter/route-helpers'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
@@ -79,6 +78,11 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       return NextResponse.json({ error: 'No data to render' }, { status: 400 })
     }
 
+    // Import dynamique : la chaîne de rendu (recharts) s'évalue mal lors du
+    // collect statique de la route ; au runtime elle se charge normalement.
+    const { generateChartImage }: typeof import('@/lib/charts/nao/server-render') = await import(
+      '@/lib/charts/nao/server-render'
+    )
     const png = generateChartImage({ config: { ...input, chart_type: input.chart_type }, data })
     const bytes = new Uint8Array(png)
     return new NextResponse(bytes, {
