@@ -6,7 +6,9 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth'
 import { InputSchema } from '@/lib/charts/nao/display-chart'
+import { enforceUserRateLimit } from '@/lib/core/rate-limiter/route-helpers'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { assertChatAccess } from '@/lib/stories/access'
 import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('ChartFenceAPI')
@@ -17,6 +19,7 @@ function escapeLike(value: string): string {
 
 const FenceBodySchema = z.object({
   workspaceId: z.string(),
+  chatId: z.string().optional(),
   oldFence: z.string().min(1).max(200000),
   newFence: z.string().min(1).max(200000),
 })
@@ -31,6 +34,9 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const rateLimited = await enforceUserRateLimit('charts-fence', session.user.id)
+    if (rateLimited) return rateLimited
+
     let body: unknown
     try {
       body = await request.json()
@@ -41,7 +47,12 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     if (!parsedBody.success) {
       return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
     }
-    const { workspaceId, oldFence, newFence } = parsedBody.data
+    const { workspaceId, chatId, oldFence, newFence } = parsedBody.data
+
+    // Si le chat est connu, il doit appartenir au workspace (anti-énumération).
+    if (chatId && !(await assertChatAccess(session.user.id, workspaceId, chatId))) {
+      return NextResponse.json({ error: 'Access denied to this chat' }, { status: 403 })
+    }
 
     const workspacePermission = await getUserEntityPermissions(
       session.user.id,
@@ -70,6 +81,8 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       .where(
         and(
           eq(copilotChats.workspaceId, workspaceId),
+          // Scope au chat quand connu : LIKE indexé via chatCreatedAtIdx.
+          chatId ? eq(copilotMessages.chatId, chatId) : undefined,
           eq(copilotMessages.role, 'assistant'),
           isNull(copilotMessages.deletedAt),
           // Échappe les wildcards LIKE (noms de colonnes avec _notamment).

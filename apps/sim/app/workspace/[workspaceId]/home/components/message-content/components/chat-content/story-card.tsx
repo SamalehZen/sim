@@ -4,6 +4,7 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@sim/emcn'
 import { ArrowUpRight } from '@sim/emcn/icons'
 import { useParams } from 'next/navigation'
+import { invalidateChatStorySlugs } from '@/app/workspace/[workspaceId]/home/components/story-panel/use-chat-stories'
 
 export interface StoryFence {
   action: 'create' | 'update' | 'replace'
@@ -96,7 +97,10 @@ export const StoryCard = memo(function StoryCard({
           title: fence.title,
           code: fence.code,
         })
-        if (created && active) setServer({ title: created.title, version: created.version })
+        if (created && active) {
+          setServer({ title: created.title, version: created.version })
+          invalidateChatStorySlugs(workspaceId, chatId)
+        }
         return
       }
 

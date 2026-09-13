@@ -4,6 +4,7 @@ import { createLogger } from '@sim/logger'
 import { and, desc, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
+import { enforceUserRateLimit } from '@/lib/core/rate-limiter/route-helpers'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { assertChatAccess } from '@/lib/stories/access'
 
@@ -16,6 +17,9 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const rateLimited = await enforceUserRateLimit('stories', session.user.id)
+    if (rateLimited) return rateLimited
 
     const { searchParams } = new URL(request.url)
     const workspaceId = searchParams.get('workspaceId') ?? ''
@@ -65,6 +69,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
             .from(chatStoryVersion)
             .where(eq(chatStoryVersion.storyId, story.id))
             .orderBy(desc(chatStoryVersion.version))
+            .limit(50)
         }
         return { ...story, latest: latest ?? null, ...(versions ? { versions } : {}) }
       })

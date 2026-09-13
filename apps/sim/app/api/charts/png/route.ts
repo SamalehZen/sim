@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { getSession } from '@/lib/auth'
 import { InputSchema, isBuiltinChartType, isChartInput } from '@/lib/charts/nao/display-chart'
 import { generateChartImage } from '@/lib/charts/nao/server-render'
+import { enforceUserRateLimit } from '@/lib/core/rate-limiter/route-helpers'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
@@ -25,6 +26,14 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    // Rendu CPU-heavy (recharts SSR + resvg) : seau resserré.
+    const rateLimited = await enforceUserRateLimit('charts-png', session.user.id, {
+      maxTokens: 20,
+      refillRate: 10,
+      refillIntervalMs: 60_000,
+    })
+    if (rateLimited) return rateLimited
 
     let body: unknown
     try {

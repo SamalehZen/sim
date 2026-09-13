@@ -237,7 +237,7 @@ function ChatChartBody({
       const response = await fetch('/api/charts/fence', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workspaceId, oldFence: content, newFence }),
+        body: JSON.stringify({ workspaceId, chatId, oldFence: content, newFence }),
       })
       if (!response.ok) {
         throw new Error(`Save failed (${response.status})`)

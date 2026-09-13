@@ -5,6 +5,7 @@ import { and, desc, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth'
+import { enforceUserRateLimit } from '@/lib/core/rate-limiter/route-helpers'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { assertChatAccess } from '@/lib/stories/access'
 import { validateStoryCode } from '@/lib/stories/story-code'
@@ -31,6 +32,9 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const rateLimited = await enforceUserRateLimit('stories-version', session.user.id)
+    if (rateLimited) return rateLimited
 
     let body: unknown
     try {
