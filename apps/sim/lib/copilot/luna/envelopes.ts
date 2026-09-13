@@ -139,8 +139,28 @@ const CHART_SKILL = [
   'couleurs par defaut du theme sinon. show_data_labels:true pour afficher les valeurs.',
 ].join('\n')
 
+/**
+ * HyperFix chat-light (Phase C) : skill stories. Luna émet un fence ```story
+ * avec un JSON {action, id, title?, code?, search?, replace?} :
+ * - create : nouvelle story (title + code requis, id = slug kebab-case)
+ * - update : search + replace dans le code courant (nouvelle version)
+ * - replace : nouveau code complet (nouvelle version)
+ * Le code est du markdown avec des blocs <chart>{json display_chart}</chart>,
+ * <table>{json}</table>, <grid>...</grid>, <tab title="...">...</tab>.
+ */
+const STORY_SKILL = [
+  'Stories : pour un rapport/une page qui persiste (tableau de bord, suivi),',
+  'crée une story avec UN bloc ```story {"action":"create","id":"mon-slug",',
+  '"title":"Titre","code":"# Titre\\n<chart>{...}</chart>"}. Les blocs <chart> et',
+  '<table> contiennent le même JSON que tes fences ```chart (données lues,',
+  'jamais inventées). Modifie ensuite avec {"action":"update","id":"...","search":"...","replace":"..."}',
+  'ou {"action":"replace","id":"...","code":"..."}. Un seul fence ```story par message.',
+].join('\n')
+
 export function buildLunaSystemPrompt(pack: ContextePack, override?: string): string | undefined {
-  const parts = [pack.system, CHART_SKILL, (override ?? '').trim()].filter((p) => p !== '')
+  const parts = [pack.system, CHART_SKILL, STORY_SKILL, (override ?? '').trim()].filter(
+    (p) => p !== ''
+  )
   if (parts.length === 0) return undefined
   return parts.join('\n\n')
 }

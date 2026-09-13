@@ -43,6 +43,7 @@ import { useSmoothText } from '@/hooks/use-smooth-text'
 import { ChatChart } from './chat-chart'
 import { sanitizeChatDisplayContent } from './chat-sanitize'
 import { ExternalLink, externalLinkHostname } from './external-link'
+import { StoryCard } from './story-card'
 
 const LANG_ALIASES: Record<string, string> = {
   js: 'javascript',
@@ -288,10 +289,16 @@ function getMarkdownComponents(chartStreaming: boolean) {
       const language = langMatch ? langMatch[1] : ''
       const codeString = extractTextContent(children)
 
-      // HyperFix chat-light (Phase B) : un fence ```chart porte un document
-      // `.chart` (contrat lib/charts/spec) rendu en graphique ECharts.
+      // HyperFix chat-light (Phase B2) : un fence ```chart porte un JSON
+      // display_chart (contrat lib/charts/nao) rendu en graphique recharts.
       if (language === 'chart') {
         return <ChatChart content={codeString} isStreaming={chartStreaming} />
+      }
+
+      // HyperFix chat-light (Phase C) : un fence ```story porte un JSON
+      // d'opération story, rendu en carte (side panel au lot C-c).
+      if (language === 'story') {
+        return <StoryCard content={codeString} isStreaming={chartStreaming} />
       }
 
       if (!codeString) {
