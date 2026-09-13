@@ -118,21 +118,25 @@ export function translateAgentEvent(
 }
 
 /**
- * HyperFix chat-light (Phase B) : skill visuels. Apprend à Luna le langage
- * graphique du chat : un fence ```chart contenant un document `.chart`
- * (contrat lib/charts/spec), rendu en ECharts côté UI.
+ * HyperFix chat-light (Phase B2) : skill visuels au format nao. Luna émet un
+ * fence ```chart contenant un JSON display_chart (contrat lib/charts/nao) :
+ * source (table Sim lue en live ou lignes statiques déjà lues via les outils
+ * table), chart_type, x_axis_key, series. Rendu recharts côté UI, comme nao.
  */
 const CHART_SKILL = [
-  'Graphiques : quand des nombres se comparent mieux en image (parts, evolution, classement),',
-  'ajoute UN bloc ```chart avec un JSON {schema_version: 1, title, source, option}.',
-  'Regles : barres pour comparer des categories, line pour une evolution, pie pour des parts',
-  '(6 parts max). Donnees LUES via tes outils uniquement, jamais inventees, 12 points max.',
-  'source.static.rows = tes lignes lues ; option = option ECharts simple utilisant',
-  'option.dataset (colonnes nommees comme dans la table), sans toolbox ni liens.',
-  'Exemple : ```chart {"schema_version":1,"title":"Scores",',
-  '"source":{"type":"static","rows":[{"nom":"Ada","score":95}]},',
-  '"option":{"xAxis":{"type":"category"},"yAxis":{},"series":[{"type":"bar",',
-  '"encode":{"x":"nom","y":"score"}}]}} ```',
+  'Graphiques : quand des nombres se comparent mieux en image, ajoute UN bloc',
+  "```chart avec un JSON display_chart (jamais d'option ECharts brute) :",
+  '{"source":{"type":"static","rows":[{"nom":"Ada","score":95}]},',
+  '"chart_type":"bar","x_axis_key":"nom","x_axis_type":"category",',
+  '"series":[{"data_key":"score","label":"Score"}],"title":"Scores"}.',
+  'Types : bar, stacked_bar, stacked_bar_100, line, area, stacked_area,',
+  'stacked_area_100, mixed (double axe), pie, donut, kpi_card, scatter, radar,',
+  'table. x_axis_type : category (labels), date (YYYY-MM-DD), number.',
+  'Regles : donnees LUES via tes outils uniquement, jamais inventees, 12 points',
+  'max (pie/donut 6 parts). source.table = {"type":"table","tableId":"..."} pour',
+  'une lecture live ; sinon static avec tes lignes lues (cles = noms de colonnes).',
+  'Une serie par colonne a tracer : {"data_key":"colonne","label":"...","color":"#..."};',
+  'couleurs par defaut du theme sinon. show_data_labels:true pour afficher les valeurs.',
 ].join('\n')
 
 export function buildLunaSystemPrompt(pack: ContextePack, override?: string): string | undefined {

@@ -1,29 +1,43 @@
 'use client'
 
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
-import { getErrorMessage } from '@sim/utils/errors'
-import type { EChartsOption } from 'echarts'
+import { memo, useMemo, useState } from 'react'
+import {
+  Button,
+  cn,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@sim/emcn'
+import { ChartColumn, Code, Download, List } from '@sim/emcn/icons'
 import { useParams } from 'next/navigation'
-import { useTheme } from 'next-themes'
-import { buildChartRenderOption } from '@/lib/charts/option'
+import {
+  DATE_RANGE_OPTIONS,
+  type DateRange,
+  filterByDateRange,
+  sortByDateKey,
+} from '@/lib/charts/nao/charts-utils'
+import { resolveDataKey } from '@/lib/charts/nao/data-keys'
+import * as displayChart from '@/lib/charts/nao/display-chart'
 import {
   CHART_ROWS_DEFAULT,
   CHART_ROWS_MAX,
-  type ChartSpec,
   mapRowsToColumnNames,
-  parseChartSpec,
   shapeTableRows,
 } from '@/lib/charts/spec'
+import { downloadCsv, downloadXlsx, tableToCsv } from '@/lib/table-export'
 import { useTable, useTableRowsSample } from '@/hooks/queries/tables'
+import { ChartRangeSelector } from '../chart-display/chart-range-selector'
+import { ChartDisplay } from '../chart-display/chart-view'
+import { TableDisplay } from '../chart-display/display-table'
 
-type EChartsModule = typeof import('echarts')
+type ViewMode = 'chart' | 'data' | 'query'
 
 /**
- * HyperFix chat-light (Phase B) : rend un fence ```chart d'un message Luna.
- * Même contrat `.chart` que le file viewer (parseChartSpec + confinement
- * canvas), en version compacte pour le fil de discussion. Source `static`
- * prioritaire (lignes lues par Luna via ses outils) ; source `table`
- * supportée quand le workspaceId est résolvable (lecture live).
+ * HyperFix chat-light (Phase B2) : bloc graphique du chat, comportement nao
+ * (`DisplayChartToolCall`) — vues chart/data/query, export CSV/XLSX.
+ * Le fence ```chart porte un JSON display_chart (contrat lib/charts/nao).
+ * PNG (B2-c), édition (B2-d) et add-to-story (B2-e) arrivent ensuite.
  */
 export const ChatChart = memo(function ChatChart({
   content,
@@ -32,30 +46,27 @@ export const ChatChart = memo(function ChatChart({
   content: string
   isStreaming?: boolean
 }) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const [echartsLib, setEchartsLib] = useState<EChartsModule | null>(null)
-  const [loadError, setLoadError] = useState<string | null>(null)
-  const [renderError, setRenderError] = useState<string | null>(null)
+  const [viewMode, setViewMode] = useState<ViewMode>('chart')
+  const [dataRange, setDataRange] = useState<DateRange>('all')
   const params = useParams<{ workspaceId?: string }>()
   const workspaceId = params?.workspaceId
 
-  useEffect(() => {
-    let active = true
-    import('echarts')
-      .then((mod) => {
-        if (active) setEchartsLib(mod)
-      })
-      .catch((e) => {
-        if (active) setLoadError(getErrorMessage(e, 'failed to load the chart renderer'))
-      })
-    return () => {
-      active = false
+  const parsed: { input: displayChart.Input } | { error: string } = useMemo(() => {
+    let raw: unknown
+    try {
+      raw = JSON.parse(content)
+    } catch (e) {
+      return { error: e instanceof Error ? e.message : 'not valid JSON' } as const
     }
-  }, [])
+    const result = displayChart.InputSchema.safeParse(raw)
+    if (!result.success) {
+      return { error: result.error.issues[0]?.message ?? 'invalid chart input' } as const
+    }
+    return { input: result.data } as const
+  }, [content])
 
-  const { spec, error: parseError } = useMemo(() => parseChartSpec(content), [content])
-
-  const tableSource = spec?.source?.type === 'table' ? spec.source : null
+  const tableSource =
+    parsed && 'input' in parsed && parsed.input.source.type === 'table' ? parsed.input.source : null
   const rowsQuery = useTableRowsSample({
     workspaceId: workspaceId ?? '',
     tableId: tableSource?.tableId,
@@ -69,59 +80,27 @@ export const ChatChart = memo(function ChatChart({
     tableSource?.tableId
   )
 
-  const rows = useMemo(() => {
-    if (!spec) return null
-    if (spec.source?.type === 'static') return spec.source.rows ?? null
+  const staticRows = useMemo(() => {
+    if (!parsed || !('input' in parsed)) return null
+    return parsed.input.source.type === 'static' ? (parsed.input.source.rows ?? null) : null
+  }, [parsed])
+
+  const sourceRows = useMemo(() => {
+    if (staticRows) return staticRows as Record<string, unknown>[]
     if (!tableSource) return null
     const fetched = rowsQuery.data?.rows
     const columns = tableQuery.data?.schema.columns
     if (!fetched || !columns) return null
-    return shapeTableRows(mapRowsToColumnNames(fetched, columns), tableSource)
-  }, [spec, tableSource, rowsQuery.data, tableQuery.data])
+    return shapeTableRows(mapRowsToColumnNames(fetched, columns), {
+      type: 'table',
+      tableId: tableSource.tableId,
+    }) as Record<string, unknown>[]
+  }, [staticRows, tableSource, rowsQuery.data, tableQuery.data])
 
-  const option = useMemo(
-    () =>
-      spec
-        ? (buildChartRenderOption({
-            title: spec.title,
-            option: spec.option,
-            rows,
-          }) as EChartsOption)
-        : null,
-    [spec, rows]
-  )
-  const optionKey = useMemo(() => (option ? JSON.stringify(option) : ''), [option])
-
-  const { resolvedTheme } = useTheme()
-
-  useEffect(() => {
-    setRenderError(null)
-    const el = containerRef.current
-    if (!el || !echartsLib || !option) return
-    const chart = echartsLib.init(el, resolvedTheme === 'dark' ? 'dark' : undefined)
-    try {
-      chart.setOption(option)
-    } catch (e) {
-      setRenderError(getErrorMessage(e, 'invalid ECharts option'))
-      chart.dispose()
-      return
-    }
-    const resizeObserver = new ResizeObserver(() => chart.resize())
-    resizeObserver.observe(el)
-    return () => {
-      resizeObserver.disconnect()
-      chart.dispose()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [echartsLib, optionKey, resolvedTheme])
-
-  const title = useMemo(() => {
-    const parsed = parseChartTitle(spec)
-    return parsed ?? 'chart'
-  }, [spec])
-
-  // En streaming, un JSON tronqué est normal : skeleton discret, pas d'erreur.
-  if (parseError) {
+  // Le rendu est assuré par ChartDisplay (recharts) ; la validation du
+  // fence est faite par InputSchema ci-dessus.
+  if (!parsed || !('input' in parsed)) {
+    const message = !parsed ? 'invalid chart' : parsed.error
     if (isStreaming) {
       return (
         <div
@@ -130,68 +109,368 @@ export const ChatChart = memo(function ChatChart({
         />
       )
     }
-    return <ChatChartError message={parseError} content={content} title={title} />
+    return <ChatChartError message={message} content={content} title='chart' />
   }
-  if (loadError) return <ChatChartError message={loadError} content={content} title={title} />
+
+  const input = parsed.input
+  const isTableVariant = input.chart_type === 'table'
+
   if (tableSource && !workspaceId) {
     return (
       <ChatChartError
         message='table source needs a workspace context'
         content={content}
-        title={title}
+        title={input.title ?? 'chart'}
       />
     )
   }
   if (tableSource && rowsQuery.isError) {
-    return (
-      <ChatChartError
-        message={getErrorMessage(rowsQuery.error, 'failed to read the table')}
-        content={content}
-        title={title}
-      />
-    )
+    const message =
+      rowsQuery.error instanceof Error ? rowsQuery.error.message : 'failed to read the table'
+    return <ChatChartError message={message} content={content} title={input.title ?? 'chart'} />
   }
   if (tableSource && tableQuery.isError) {
+    const message =
+      tableQuery.error instanceof Error ? tableQuery.error.message : 'failed to read the table'
+    return <ChatChartError message={message} content={content} title={input.title ?? 'chart'} />
+  }
+
+  return (
+    <ChatChartBody
+      input={input}
+      rows={sourceRows}
+      waitingOnRows={Boolean(tableSource) && sourceRows === null}
+      viewMode={viewMode}
+      setViewMode={setViewMode}
+      dataRange={dataRange}
+      setDataRange={setDataRange}
+      content={content}
+      isTableVariant={isTableVariant}
+    />
+  )
+})
+
+function ChatChartBody({
+  input,
+  rows,
+  waitingOnRows,
+  viewMode,
+  setViewMode,
+  dataRange,
+  setDataRange,
+  content,
+  isTableVariant,
+}: {
+  input: displayChart.Input
+  rows: Record<string, unknown>[] | null
+  waitingOnRows: boolean
+  viewMode: ViewMode
+  setViewMode: (mode: ViewMode) => void
+  dataRange: DateRange
+  setDataRange: (range: DateRange) => void
+  content: string
+  isTableVariant: boolean
+}) {
+  const title = input.title ?? 'chart'
+
+  if (isTableVariant && displayChart.isTableInput(input)) {
+    if (!rows) {
+      return waitingOnRows ? (
+        <div
+          data-testid='chat-chart-loading'
+          className='not-prose my-4 h-[200px] w-full animate-pulse rounded-lg bg-[var(--surface-4)]'
+        />
+      ) : (
+        <div className='my-2 text-[var(--text-secondary)] text-sm'>
+          Could not display the table because the data is missing.
+        </div>
+      )
+    }
     return (
-      <ChatChartError
-        message={getErrorMessage(tableQuery.error, 'failed to read the table')}
-        content={content}
-        title={title}
-      />
+      <div
+        data-testid='chat-chart'
+        className='not-prose my-4 overflow-hidden rounded-lg border border-[var(--border)]'
+      >
+        <ChartHeader
+          title={title}
+          viewMode={viewMode}
+          setViewMode={setViewMode}
+          showQueryView
+          rows={rows}
+        />
+        {viewMode === 'query' ? (
+          <QueryView input={input} />
+        ) : (
+          <TableDisplay
+            data={rows}
+            tableContainerClassName='max-h-80 rounded-none border-0 bg-transparent'
+            maxRowsBeforePagination={10}
+            compactFooter
+            conditionalFormats={input.conditional_formats}
+          />
+        )}
+      </div>
     )
   }
 
-  const waitingOnRows = Boolean(tableSource) && rows === null
+  if (!displayChart.isChartInput(input)) {
+    return <ChatChartError message='invalid chart input' content={content} title={title} />
+  }
+
+  if (input.series.length === 0) {
+    return (
+      <div className='my-2 text-[var(--text-secondary)] text-sm'>
+        Could not display the chart because no series are configured.
+      </div>
+    )
+  }
+  if (!rows) {
+    return waitingOnRows ? (
+      <div
+        data-testid='chat-chart-loading'
+        className='not-prose my-4 h-[280px] w-full animate-pulse rounded-lg bg-[var(--surface-4)]'
+      />
+    ) : (
+      <div className='my-2 text-[var(--text-secondary)] text-sm'>
+        Could not display the chart because the data is missing.
+      </div>
+    )
+  }
+  if (rows.length === 0) {
+    return (
+      <div className='my-2 text-[var(--text-secondary)] text-sm'>
+        Could not display the chart because the data is empty.
+      </div>
+    )
+  }
+
+  const columns = Object.keys(rows[0] ?? {})
+  const showRange = !displayChart.isPieChart(input.chart_type) && input.x_axis_type === 'date'
+  const filteredRows = filterRows(rows, input.x_axis_key, input.x_axis_type, dataRange)
 
   return (
     <div
       data-testid='chat-chart'
-      className='not-prose my-4 overflow-hidden rounded-lg border border-[var(--border)]'
-    >
-      <div className='flex items-center justify-between border-[var(--border)] border-b bg-[var(--surface-4)] px-4 py-2'>
-        <span className='text-[var(--text-tertiary)] text-xs'>{title}</span>
-      </div>
-      {renderError !== null && (
-        <div className='border-[var(--border)] border-b bg-[var(--surface-5)] px-4 py-2 text-[var(--text-muted)] text-xs'>
-          {renderError}
-        </div>
+      className={cn(
+        'group/chart not-prose relative my-4 flex flex-col items-stretch gap-2 overflow-hidden rounded-lg border border-[var(--border)] px-3'
       )}
-      <div className={renderError !== null ? 'hidden' : 'relative w-full'}>
-        {(!echartsLib || waitingOnRows) && (
-          <div
-            data-testid='chat-chart-loading'
-            className='absolute inset-0 z-10 animate-pulse bg-[var(--surface-4)]'
-          />
+    >
+      <div className='flex w-full items-center justify-between py-2'>
+        <div className='flex items-center gap-1'>
+          <span className='flex-1 font-medium text-sm'>{title}</span>
+          {showRange && (
+            <ChartRangeSelector
+              options={DATE_RANGE_OPTIONS}
+              selectedRange={dataRange}
+              onRangeSelected={(range: DateRange) => setDataRange(range)}
+            />
+          )}
+        </div>
+        <div className='flex shrink-0 items-center gap-1'>
+          <div className='flex items-center gap-1 opacity-0 transition-opacity duration-150 focus-within:opacity-100 group-hover/chart:opacity-100'>
+            <ViewButton
+              active={viewMode === 'chart'}
+              onClick={() => setViewMode('chart')}
+              title='View chart'
+            >
+              <ChartColumn className='size-3' />
+            </ViewButton>
+            <ViewButton
+              active={viewMode === 'data'}
+              onClick={() => setViewMode('data')}
+              title='View data'
+            >
+              <List className='size-3' />
+            </ViewButton>
+            <ViewButton
+              active={viewMode === 'query'}
+              onClick={() => setViewMode('query')}
+              title='View query'
+            >
+              <Code className='size-3' />
+            </ViewButton>
+            {viewMode !== 'chart' && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant='ghost' size='icon' className='rounded-full' title='Export data'>
+                    <Download className='size-3' />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align='end'>
+                  <DropdownMenuItem
+                    onSelect={() => downloadCsv(`${title}.csv`, tableToCsv(columns, rows))}
+                  >
+                    CSV
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() => void downloadXlsx(`${title}.xlsx`, columns, rows)}
+                  >
+                    Excel (XLSX)
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {viewMode === 'data' ? (
+        <TableDisplay
+          data={rows}
+          tableContainerClassName='max-h-80 rounded-none border-0 bg-transparent'
+          maxRowsBeforePagination={10}
+          compactFooter
+        />
+      ) : viewMode === 'query' ? (
+        <QueryView input={input} />
+      ) : !displayChart.isBuiltinChartType(input.chart_type) ? (
+        <div className='my-2 text-[var(--text-secondary)] text-sm'>
+          Custom chart “{input.chart_type}” can only be configured by Luna — re-ask her to change
+          it.
+        </div>
+      ) : (
+        <ChartDisplay
+          data={filteredRows}
+          chartType={input.chart_type}
+          xAxisKey={input.x_axis_key ?? ''}
+          series={input.series}
+          xAxisType={input.x_axis_type === 'number' ? 'number' : 'category'}
+          xAxisLabel={input.x_axis_label}
+          title={undefined}
+          yAxisMin={input.y_axis_min}
+          yAxisMax={input.y_axis_max}
+          yAxisLabel={input.y_axis_label}
+          yAxisRightMin={input.y_axis_right_min}
+          yAxisRightMax={input.y_axis_right_max}
+          yAxisRightLabel={input.y_axis_right_label}
+          showDataLabels={input.show_data_labels}
+          comparisonMode={'comparison_mode' in input ? input.comparison_mode : undefined}
+          hideTotal={input.hide_total}
+        />
+      )}
+    </div>
+  )
+}
+
+function filterRows(
+  rows: Record<string, unknown>[],
+  xAxisKey: string | null | undefined,
+  xAxisType: string | null | undefined,
+  dataRange: DateRange
+): Record<string, unknown>[] {
+  if (xAxisType !== 'date') return rows
+  const resolved = resolveDataKey(rows, xAxisKey ?? '')
+  const sorted = sortByDateKey(rows, resolved)
+  return filterByDateRange(sorted, resolved, dataRange)
+}
+
+function ChartHeader({
+  title,
+  viewMode,
+  setViewMode,
+  showQueryView,
+  rows,
+}: {
+  title: string
+  viewMode: ViewMode
+  setViewMode: (mode: ViewMode) => void
+  showQueryView: boolean
+  rows: Record<string, unknown>[]
+}) {
+  const columns = Object.keys(rows[0] ?? {})
+  return (
+    <div className='flex w-full items-center justify-between gap-2 border-[var(--border)] border-b px-3 py-2'>
+      <span className='flex-1 font-medium text-sm'>{title}</span>
+      <div className='flex shrink-0 items-center gap-1'>
+        <ViewButton
+          active={viewMode === 'chart'}
+          onClick={() => setViewMode('chart')}
+          title='View chart'
+        >
+          <ChartColumn className='size-3' />
+        </ViewButton>
+        <ViewButton
+          active={viewMode === 'data'}
+          onClick={() => setViewMode('data')}
+          title='View data'
+        >
+          <List className='size-3' />
+        </ViewButton>
+        {showQueryView && (
+          <ViewButton
+            active={viewMode === 'query'}
+            onClick={() => setViewMode('query')}
+            title='View query'
+          >
+            <Code className='size-3' />
+          </ViewButton>
         )}
-        <div ref={containerRef} className='aspect-[16/10] min-h-[280px] w-full' />
+        {viewMode !== 'chart' && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant='ghost' size='icon' className='rounded-full' title='Export data'>
+                <Download className='size-3' />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align='end'>
+              <DropdownMenuItem
+                onSelect={() => downloadCsv(`${title}.csv`, tableToCsv(columns, rows))}
+              >
+                CSV
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void downloadXlsx(`${title}.xlsx`, columns, rows)}>
+                Excel (XLSX)
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
     </div>
   )
-})
+}
 
-function parseChartTitle(spec: ChartSpec | undefined): string | null {
-  if (!spec) return null
-  return typeof spec.title === 'string' && spec.title.trim() !== '' ? spec.title : null
+function ViewButton({
+  active,
+  onClick,
+  title,
+  children,
+}: {
+  active: boolean
+  onClick: () => void
+  title: string
+  children: React.ReactNode
+}) {
+  return (
+    <Button
+      variant='ghost'
+      size='icon'
+      className={cn('rounded-full', active ? 'bg-[var(--surface-5)]' : '')}
+      onClick={onClick}
+      title={title}
+    >
+      {children}
+    </Button>
+  )
+}
+
+/** Équivalent nao du "View SQL query" : descripteur de la source Sim (table + filtre). */
+function QueryView({ input }: { input: displayChart.Input }) {
+  const descriptor =
+    input.source.type === 'table'
+      ? {
+          table: input.source.tableId,
+          ...(input.source.filter !== undefined ? { filter: input.source.filter } : {}),
+          ...(input.source.sort !== undefined ? { sort: input.source.sort } : {}),
+          ...(input.source.limit !== undefined ? { limit: input.source.limit } : {}),
+        }
+      : { staticRows: Array.isArray(input.source.rows) ? input.source.rows.length : 0 }
+  return (
+    <div className='max-h-80 overflow-auto py-2'>
+      <pre className='m-0 overflow-x-auto whitespace-pre p-4 font-mono text-[13px] leading-[1.6]'>
+        <code>{JSON.stringify(descriptor, null, 2)}</code>
+      </pre>
+    </div>
+  )
 }
 
 function ChatChartError({
