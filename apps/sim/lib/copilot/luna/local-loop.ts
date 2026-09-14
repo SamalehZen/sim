@@ -40,12 +40,15 @@ import {
   LUNA_WORKFLOW_NAME,
   translateAgentEvent,
 } from '@/lib/copilot/luna/envelopes'
+import { addContentBlock } from '@/lib/copilot/request/handlers/types'
 import type { CopilotLifecycleOptions } from '@/lib/copilot/request/lifecycle/run'
 import type { StreamEvent } from '@/lib/copilot/request/session/contract'
 import type {
   ExecutionContext as CopilotExecutionContext,
   StreamingContext,
+  ToolCallState,
 } from '@/lib/copilot/request/types'
+import { isToolHiddenInUi } from '@/lib/copilot/tools/client/hidden-tools'
 import { getOperationOptionIds } from '@/lib/permission-groups/operation-access'
 import { performCreateWorkflowTransition } from '@/lib/workflows/orchestration/workflow-lifecycle'
 import { getBlock } from '@/blocks/registry'
@@ -219,6 +222,100 @@ export interface LunaTurnInput {
 export interface LunaTurnResult {
   status: 'complete' | 'error' | 'cancelled'
   text: string
+  /** Appels d'outils du tour (façon nao : nom, params, statut, résultat, durées). */
+  toolCalls: LunaToolRecord[]
+}
+
+export interface LunaToolRecord {
+  id: string
+  name: string
+  status: 'success' | 'error' | 'cancelled'
+  startMs: number
+  endMs?: number
+  params?: Record<string, unknown>
+  result?: unknown
+  error?: string
+}
+
+/** Horodatage ISO ou ms -> ms (les deux formes circulent selon les couches). */
+function toMs(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim() !== '') {
+    const ms = Date.parse(value)
+    return Number.isFinite(ms) ? ms : undefined
+  }
+  return undefined
+}
+
+/** Message d'erreur lisible depuis un résultat d'outil hétérogène. */
+function toolErrorMessage(result: unknown): string | undefined {
+  if (typeof result === 'string') return result.slice(0, 500) || undefined
+  if (result !== null && typeof result === 'object') {
+    const record = result as Record<string, unknown>
+    const message = record.message ?? record.error
+    if (typeof message === 'string' && message.trim() !== '') {
+      return message.slice(0, 500)
+    }
+  }
+  return undefined
+}
+
+/**
+ * Fusionne les événements du stream (id, nom, statut, durées live) avec la
+ * liste finale `output.toolCalls` du provider (params, résultat). Appariés
+ * par ordre d'appel ; les excédents de chaque côté sont conservés.
+ */
+function mergeExecutionToolCalls(
+  records: LunaToolRecord[],
+  outputToolCalls: unknown
+): LunaToolRecord[] {
+  const list = (outputToolCalls as { list?: unknown })?.list
+  if (!Array.isArray(list) || list.length === 0) return records
+  const merged = records.map((rec, index) => {
+    const item = (list[index] ?? {}) as Record<string, unknown>
+    const params =
+      item.arguments !== undefined && typeof item.arguments === 'object' && item.arguments !== null
+        ? (item.arguments as Record<string, unknown>)
+        : undefined
+    const result = 'result' in item ? item.result : (item.output ?? undefined)
+    const success = typeof item.success === 'boolean' ? item.success : undefined
+    const startMs = toMs(item.startTime) ?? rec.startMs
+    const endMs = toMs(item.endTime) ?? rec.endMs
+    const failed =
+      rec.status === 'error' ||
+      (rec.status === 'success' && success === false) ||
+      (typeof result === 'object' &&
+        result !== null &&
+        (result as Record<string, unknown>).error === true)
+    return {
+      ...rec,
+      params: params ?? rec.params,
+      result: result ?? rec.result,
+      status: failed ? 'error' : rec.status,
+      error: rec.error ?? (failed ? toolErrorMessage(result) : undefined),
+      startMs,
+      ...(endMs !== undefined ? { endMs } : {}),
+    } as LunaToolRecord
+  })
+  for (let index = records.length; index < list.length; index++) {
+    const item = (list[index] ?? {}) as Record<string, unknown>
+    const name = typeof item.name === 'string' ? item.name : 'unknown'
+    const success = typeof item.success === 'boolean' ? item.success : undefined
+    const result = 'result' in item ? item.result : (item.output ?? undefined)
+    merged.push({
+      id: `luna-tool-${index}`,
+      name,
+      status: success === false ? 'error' : 'success',
+      startMs: toMs(item.startTime) ?? Date.now(),
+      ...(toMs(item.endTime) !== undefined ? { endMs: toMs(item.endTime) as number } : {}),
+      ...(typeof item.arguments === 'object' && item.arguments !== null
+        ? { params: item.arguments as Record<string, unknown> }
+        : {}),
+      ...(result !== undefined ? { result } : {}),
+      ...(success === false ? { error: toolErrorMessage(result) ?? 'Tool execution failed' } : {}),
+    })
+  }
+  return merged
 }
 
 async function drainAgentStream(
@@ -575,17 +672,73 @@ export async function runLocalLunaTurn(input: LunaTurnInput): Promise<LunaTurnRe
   }
 
   const handler = new AgentBlockHandler()
+  const executeTurn = (turnTools: ToolInput[]) =>
+    handler.execute(execContext, block, { ...agentInputs, tools: turnTools })
   let result: StreamingExecution | BlockOutput
   try {
-    result = await handler.execute(execContext, block, agentInputs)
+    result = await executeTurn(tools)
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error)
-    logger.error('Echec execution Luna locale', { workspaceId, executionId, error: msg })
-    await onEvent(env.complete('error'))
-    return { status: 'error', text: '' }
+    // Un serveur MCP injoignable ne doit pas tuer tout le tour : on rejoue
+    // une fois sans les entrées MCP (outils natifs Sim préservés).
+    if (/mcp/i.test(msg) && tools.some((tool) => tool.type === 'mcp-server-advanced')) {
+      logger.warn('Echec MCP, tour rejoué sans MCP', { workspaceId, executionId, error: msg })
+      const fallbackTools = tools.filter((tool) => tool.type !== 'mcp-server-advanced')
+      try {
+        result = await executeTurn(fallbackTools)
+      } catch (retryError) {
+        const retryMsg = retryError instanceof Error ? retryError.message : String(retryError)
+        logger.error('Echec execution Luna locale', { workspaceId, executionId, error: retryMsg })
+        await onEvent(env.complete('error'))
+        return { status: 'error', text: '', toolCalls: [] }
+      }
+    } else {
+      logger.error('Echec execution Luna locale', { workspaceId, executionId, error: msg })
+      await onEvent(env.complete('error'))
+      return { status: 'error', text: '', toolCalls: [] }
+    }
   }
-  // Les exécutions d'outils sont internes à la boucle agent (aucun événement
-  // tool sur le stream v1) : la preuve fonctionnelle vit dans les smoke tests.
+
+  // Appels d'outils du tour, façon chemin normal : cycle live (nom, statut,
+  // durées) + détails finaux (params, résultat) lus dans output.toolCalls.
+  const toolById = new Map<string, LunaToolRecord>()
+  const toolOrder: string[] = []
+  const recordToolEvent = (event: AgentStreamEvent) => {
+    if (event.type === 'tool_call_start') {
+      if (!toolById.has(event.id)) {
+        toolById.set(event.id, {
+          id: event.id,
+          name: event.name,
+          status: 'success',
+          startMs: Date.now(),
+        })
+        toolOrder.push(event.id)
+      }
+    } else if (event.type === 'tool_call_end') {
+      const existing = toolById.get(event.id)
+      if (existing) {
+        existing.status = event.status
+        existing.endMs = Date.now()
+      } else {
+        toolById.set(event.id, {
+          id: event.id,
+          name: event.name,
+          status: event.status,
+          startMs: Date.now(),
+          endMs: Date.now(),
+        })
+        toolOrder.push(event.id)
+      }
+    }
+  }
+  const collectToolCalls = (output: unknown): LunaToolRecord[] => {
+    const base = toolOrder.map((id) => toolById.get(id)).filter((r): r is LunaToolRecord => !!r)
+    const merged = mergeExecutionToolCalls(
+      base,
+      (output as { toolCalls?: unknown } | null)?.toolCalls
+    )
+    return merged
+  }
 
   const streaming: StreamingExecution | null =
     typeof result === 'object' &&
@@ -599,7 +752,12 @@ export async function runLocalLunaTurn(input: LunaTurnInput): Promise<LunaTurnRe
     const text = typeof content === 'string' ? content : ''
     if (text) await onEvent(env.text('assistant', text))
     await onEvent(env.complete('complete'))
-    return { status: 'complete', text }
+    const output = (result as unknown as { execution?: { output?: unknown } })?.execution?.output
+    return {
+      status: 'complete',
+      text,
+      toolCalls: collectToolCalls(output ?? (result as unknown as { output?: unknown })?.output),
+    }
   }
 
   let fullText = ''
@@ -607,6 +765,7 @@ export async function runLocalLunaTurn(input: LunaTurnInput): Promise<LunaTurnRe
     fullText = await drainAgentStream(
       streaming,
       async (event) => {
+        recordToolEvent(event)
         const translated = translateAgentEvent(env, event)
         if (translated) await onEvent(translated)
       },
@@ -616,15 +775,20 @@ export async function runLocalLunaTurn(input: LunaTurnInput): Promise<LunaTurnRe
     const msg = error instanceof Error ? error.message : String(error)
     logger.error('Echec drain stream Luna', { workspaceId, executionId, error: msg })
     await onEvent(env.complete('error'))
-    return { status: 'error', text: fullText }
+    return {
+      status: 'error',
+      text: fullText,
+      toolCalls: collectToolCalls(streaming.execution?.output),
+    }
   }
 
+  const toolCalls = collectToolCalls(streaming.execution?.output)
   if (abortSignal?.aborted) {
     await onEvent(env.complete('cancelled'))
-    return { status: 'cancelled', text: fullText }
+    return { status: 'cancelled', text: fullText, toolCalls }
   }
   await onEvent(env.complete('complete'))
-  return { status: 'complete', text: fullText }
+  return { status: 'complete', text: fullText, toolCalls }
 }
 
 /**
@@ -702,6 +866,26 @@ export async function runWorkspaceLunaTurn(args: {
 
   context.accumulatedContent += result.text
   context.finalAssistantContent += result.text
+  // Appels d'outils persistés façon chemin normal : la Map alimente les
+  // résumés du finalize, les blocs alimentent le transcript relu en UI.
+  for (const call of result.toolCalls) {
+    const state: ToolCallState = {
+      id: call.id,
+      name: call.name,
+      status: call.status,
+      ...(call.params ? { params: call.params } : {}),
+      ...(call.result !== undefined
+        ? { result: { success: call.status === 'success', output: call.result } }
+        : {}),
+      ...(call.error ? { error: call.error } : {}),
+      startTime: call.startMs,
+      ...(call.endMs !== undefined ? { endTime: call.endMs } : {}),
+    }
+    context.toolCalls.set(call.id, state)
+    if (!isToolHiddenInUi(call.name)) {
+      addContentBlock(context, { type: 'tool_call', toolCall: state })
+    }
+  }
   if (result.status === 'complete') {
     context.completionStatus = MothershipStreamV1CompletionStatus.complete
   } else if (result.status === 'cancelled') {
