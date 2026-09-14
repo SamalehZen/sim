@@ -202,6 +202,8 @@ const GAMME_SKILL = [
   'gamme_article (fiche code), gamme_rapports, gamme_imports, gamme_anomalies,',
   'gamme_recherche_articles, gamme_history_export, gamme_import_file,',
   'gamme_etiquettes, gamme_libeller, gamme_structure_articles, gamme_image_article.',
+  'Photos produit : gamme_image_article puis fence chart_type product_image',
+  'avec les lignes {image_url,...}.',
   "Règle : ne devine JAMAIS un rayon — demande ou liste d'abord.",
 ].join('\n')
 

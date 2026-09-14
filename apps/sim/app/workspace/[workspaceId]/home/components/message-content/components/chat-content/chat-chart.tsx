@@ -408,16 +408,18 @@ function ChatChartBody({
               <Code className='size-3' />
             </ViewButton>
             {viewMode === 'chart' ? (
-              <Button
-                variant='ghost'
-                size='icon'
-                className='rounded-full'
-                onClick={() => void handleDownloadPng()}
-                disabled={isDownloading}
-                title='Download as PNG'
-              >
-                <Download className='size-3' />
-              </Button>
+              displayChart.isBuiltinChartType(input.chart_type) ? (
+                <Button
+                  variant='ghost'
+                  size='icon'
+                  className='rounded-full'
+                  onClick={() => void handleDownloadPng()}
+                  disabled={isDownloading}
+                  title='Download as PNG'
+                >
+                  <Download className='size-3' />
+                </Button>
+              ) : null
             ) : (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -498,6 +500,8 @@ function ChatChartBody({
         />
       ) : viewMode === 'query' ? (
         <QueryView input={input} />
+      ) : input.chart_type === 'product_image' ? (
+        <ProductImageView rows={rows} title={title} />
       ) : !displayChart.isBuiltinChartType(input.chart_type) ? (
         <div className='my-2 text-[var(--text-secondary)] text-sm'>
           Custom chart “{input.chart_type}” can only be configured by Luna — re-ask her to change
@@ -641,6 +645,48 @@ function ViewButton({
 }
 
 /** Équivalent nao du "View SQL query" : descripteur de la source Sim (table + filtre). */
+/** Porté depuis nao (`agent/charts/product_image.js`) : photo produit via `image_url`. */
+function ProductImageView({ rows, title }: { rows: Record<string, unknown>[]; title: string }) {
+  const items = rows
+    .map((row) => {
+      const url = row.image_url
+      if (typeof url !== 'string' || url.trim() === '') return null
+      const caption = Object.entries(row)
+        .filter(([key]) => key !== 'image_url')
+        .map(([, value]) => String(value ?? ''))
+        .filter(Boolean)
+        .join(' · ')
+      return { url, caption }
+    })
+    .filter((item): item is { url: string; caption: string } => item !== null)
+  if (items.length === 0) {
+    return (
+      <div className='my-2 text-[var(--text-secondary)] text-sm'>
+        No product images in “{title}” (missing image_url column).
+      </div>
+    )
+  }
+  return (
+    <div className='grid grid-cols-2 gap-3 py-2 sm:grid-cols-3'>
+      {items.map((item, index) => (
+        <figure key={index} className='flex flex-col gap-1'>
+          <img
+            src={item.url}
+            alt={item.caption || title}
+            loading='lazy'
+            className='aspect-square w-full rounded-lg border border-[var(--border)] object-cover'
+          />
+          {item.caption && (
+            <figcaption className='truncate text-center text-[var(--text-tertiary)] text-xs'>
+              {item.caption}
+            </figcaption>
+          )}
+        </figure>
+      ))}
+    </div>
+  )
+}
+
 function QueryView({ input }: { input: displayChart.Input }) {
   const descriptor =
     input.source.type === 'table'
