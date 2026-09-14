@@ -189,11 +189,28 @@ const PARITY_NOTE = [
   'sans demander de confirmation, et annonce ce que tu as fait après coup.',
 ].join('\n')
 
+/**
+ * Moteur gamme (sim-engine, MCP) : stocks, imports, rapports d'épicerie.
+ * Utilise TOUJOURS ces outils quand la question touche la gamme, les rayons,
+ * les stocks, les négatifs ou les rapports — jamais de réponse inventée.
+ */
+const GAMME_SKILL = [
+  'Moteur gamme (outils sim-engine) : pour toute question stocks, rayons,',
+  'négatifs, rapports, imports, utilise ces outils, dans cet ordre utile :',
+  'gamme_rayons (liste), gamme_mon_rayon (mes rayons), gamme_negatifs,',
+  'gamme_serie (historique), gamme_query (SQL SELECT sur gamme_commande),',
+  'gamme_article (fiche code), gamme_rapports, gamme_imports, gamme_anomalies,',
+  'gamme_recherche_articles, gamme_history_export, gamme_import_file,',
+  'gamme_etiquettes, gamme_libeller, gamme_structure_articles, gamme_image_article.',
+  "Règle : ne devine JAMAIS un rayon — demande ou liste d'abord.",
+].join('\n')
+
 export function buildLunaSystemPrompt(pack: ContextePack, override?: string): string | undefined {
   const parts = [
     pack.system,
     TABLE_SKILL,
     PARITY_NOTE,
+    GAMME_SKILL,
     CHART_SKILL,
     STORY_SKILL,
     (override ?? '').trim(),

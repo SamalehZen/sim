@@ -21,9 +21,11 @@ import {
   mcpServers,
   skill,
   workflow,
+  workflowBlocks,
 } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, asc, eq, isNotNull, isNull } from 'drizzle-orm'
+import type { BillingAttributionSnapshot } from '@/lib/billing/core/billing-attribution'
 import { prepareCopilotEnvironmentContext } from '@/lib/copilot/environment-context'
 import {
   MothershipStreamV1CompletionStatus,
@@ -64,6 +66,42 @@ import type { SerializedBlock } from '@/serializer/types'
 const logger = createLogger('LunaLocalLoop')
 
 const workflowIdCache = new Map<string, string>()
+
+/** ID stable du bloc agent Luna (lu par l'autorisation MCP via ctx.mcpBlockId). */
+export const LUNA_AGENT_BLOCK_ID = 'luna-chat'
+
+/**
+ * Persiste le bloc agent Luna (avec ses attachements MCP) dans le workflow.
+ * Sans cette ligne, l'exécution d'outils MCP échoue en autorisation
+ * ("MCP source block is missing or disabled"), car la provenance est relue
+ * depuis les blocs persistés du workflow.
+ */
+export async function ensureLunaAgentBlock(
+  workflowId: string,
+  mcpEntries: ToolInput[]
+): Promise<void> {
+  await db
+    .insert(workflowBlocks)
+    .values({
+      id: LUNA_AGENT_BLOCK_ID,
+      workflowId,
+      type: 'agent',
+      name: 'Luna Chat',
+      positionX: '0',
+      positionY: '0',
+      enabled: true,
+      subBlocks: { tools: { value: mcpEntries } },
+      outputs: {},
+      data: {},
+    })
+    .onConflictDoUpdate({
+      target: workflowBlocks.id,
+      set: {
+        subBlocks: { tools: { value: mcpEntries } },
+        updatedAt: new Date(),
+      },
+    })
+}
 
 /** Vrai workflow provisionné par workspace (FK/logs/MCP-scoping restent cohérents). */
 export async function ensureLunaWorkflowId(workspaceId: string, userId: string): Promise<string> {
@@ -172,6 +210,8 @@ export interface LunaTurnInput {
   executorDelegationOrigin?: ExecutorDelegationOrigin
   /** Registry de traçabilité des secrets (obligatoire : sans lui les outils échouent). */
   resolvedSecretTraceRegistry?: ResolvedSecretTraceRegistry
+  /** Facturation (exigée par les outils MCP ; résolue comme la prod sinon). */
+  billingAttribution?: BillingAttributionSnapshot
   abortSignal?: AbortSignal
   onEvent: (event: StreamEvent) => void | Promise<void>
 }
@@ -370,6 +410,7 @@ export async function runLocalLunaTurn(input: LunaTurnInput): Promise<LunaTurnRe
     systemPrompt,
     executorDelegationOrigin,
     resolvedSecretTraceRegistry,
+    billingAttribution,
     abortSignal,
     onEvent,
   } = input
@@ -401,14 +442,32 @@ export async function runLocalLunaTurn(input: LunaTurnInput): Promise<LunaTurnRe
   })
 
   // Serveurs MCP activés du workspace (entrée avancée = tous leurs outils).
-  // Vide ici (aucun serveur connecté) : aucun appel réseau, juste une requête.
+  // Filtrés par résolvabilité DNS : un serveur injoignable ferait échouer
+  // tout le tour en découverte (erreur fatale), on le saute avec un warn.
   let mcpServerIds: string[] = []
   try {
     const rows = await db
-      .select({ id: mcpServers.id })
+      .select({ id: mcpServers.id, url: mcpServers.url })
       .from(mcpServers)
       .where(and(eq(mcpServers.workspaceId, workspaceId), eq(mcpServers.enabled, true)))
-    mcpServerIds = rows.map((r) => r.id)
+    const { lookup } = await import('node:dns/promises')
+    const checks = await Promise.all(
+      rows.map(async (row) => {
+        try {
+          const hostname = new URL(row.url ?? '').hostname
+          if (!hostname) return null
+          await lookup(hostname)
+          return row.id
+        } catch {
+          logger.warn('Serveur MCP injoignable, ignoré pour ce tour', {
+            workspaceId,
+            serverId: row.id,
+          })
+          return null
+        }
+      })
+    )
+    mcpServerIds = checks.filter((id): id is string => id !== null)
   } catch (error) {
     logger.warn('Serveurs MCP illisibles, ignorés', {
       workspaceId,
@@ -443,7 +502,9 @@ export async function runLocalLunaTurn(input: LunaTurnInput): Promise<LunaTurnRe
   })
 
   const block: SerializedBlock = {
-    id: `luna-chat-${executionId}`,
+    // ID STABLE (pas par exécution) : le handler pose ctx.mcpBlockId = block.id
+    // et l'autorisation MCP relit ce bloc dans le workflow. Voir ensureLunaAgentBlock.
+    id: 'luna-chat',
     position: { x: 0, y: 0 },
     config: { tool: BlockType.AGENT, params: { model: LUNA_MODEL } },
     inputs: {},
@@ -452,6 +513,18 @@ export async function runLocalLunaTurn(input: LunaTurnInput): Promise<LunaTurnRe
     enabled: true,
   }
   const blockId = block.id as string
+
+  // Persiste le bloc agent (avec ses attachements MCP) dans le workflow Luna :
+  // sans lui, l'autorisation d'exécution MCP échoue ("source block missing").
+  await ensureLunaAgentBlock(
+    lunaWorkflowId,
+    tools.filter((tool) => tool.type === 'mcp-server-advanced')
+  ).catch((error) => {
+    logger.warn('Bloc agent Luna non persisté, outils MCP réduits', {
+      workspaceId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+  })
 
   const execContext: ExecutionContext = {
     workflowId: lunaWorkflowId,
@@ -479,7 +552,11 @@ export async function runLocalLunaTurn(input: LunaTurnInput): Promise<LunaTurnRe
     blockStates: new Map(),
     executedBlocks: new Set<string>(),
     blockLogs: [],
-    metadata: { duration: 0 },
+    metadata: {
+      duration: 0,
+      // Facturation exigée par les outils MCP (chemin Go identique).
+      ...(billingAttribution ? { billingAttribution } : {}),
+    },
     environmentVariables: {},
     decisions: { router: new Map<string, string>(), condition: new Map<string, string>() },
     completedLoops: new Set<string>(),
@@ -589,6 +666,21 @@ export async function runWorkspaceLunaTurn(args: {
     options.environmentContext?.resolvedSecretTraceRegistry ??
     (await prepareCopilotEnvironmentContext(userId, workspaceId)).resolvedSecretTraceRegistry
 
+  // Facturation exigée par les outils MCP : celle de la requête si présente,
+  // sinon résolue comme la prod (même payeur que le chemin normal).
+  let billingAttribution = options.billingAttribution
+  if (!billingAttribution && workspaceId) {
+    try {
+      const { resolveBillingAttribution } = await import('@/lib/billing/core/billing-attribution')
+      billingAttribution = await resolveBillingAttribution({ actorUserId: userId, workspaceId })
+    } catch (error) {
+      logger.warn('Facturation illisible, outils MCP indisponibles ce tour-ci', {
+        workspaceId,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
   const result = await runLocalLunaTurn({
     workspaceId,
     userId,
@@ -598,6 +690,7 @@ export async function runWorkspaceLunaTurn(args: {
     message,
     ...(finalSystemPrompt ? { systemPrompt: finalSystemPrompt } : {}),
     resolvedSecretTraceRegistry,
+    ...(billingAttribution ? { billingAttribution } : {}),
     ...(options.executorDelegationOrigin
       ? { executorDelegationOrigin: options.executorDelegationOrigin }
       : {}),
