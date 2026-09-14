@@ -157,10 +157,47 @@ const STORY_SKILL = [
   'ou {"action":"replace","id":"...","code":"..."}. Un seul fence ```story par message.',
 ].join('\n')
 
+/**
+ * HyperFix chat-light (parité sim.ai) : skill tables. Luna gère les tables
+ * du workspace de bout en bout : créer (avec schéma), remplir, lire,
+ * modifier, supprimer. Une table créée rejoint l'inventaire au tour suivant.
+ */
+const TABLE_SKILL = [
+  'Tables : tu peux tout faire — créer, remplir, lire, modifier, supprimer.',
+  'Créer : outil create avec {"name":"nom_simple","description":"...","schema":{"columns":[{...}]}}.',
+  'Colonnes : {"name":"nom","type":"string|number|boolean|date|currency"} (id auto).',
+  'Remplir : insert_row / batch_insert_rows sur la table (même tour possible).',
+  'IMPORTANT : dans le même tour, tu ne peux remplir que les tables de',
+  "l'inventaire ci-dessus. Une table que tu viens de créer n'a pas encore",
+  "d'outils liés : dis-le et remplis-la au tour suivant (elle sera à l'inventaire).",
+  'Lire : query_rows (toujours avec un filtre, ex. {"nom":{"$ne":""}}), get_schema.',
+  'Modifier/supprimer : update_rows_by_filter / delete_rows_by_filter, avec prudence.',
+  "Ne jamais inventer de tableId : utilise l'inventaire ou viens de créer la table.",
+].join('\n')
+
+/**
+ * Parité sim.ai : services connectés (toutes ops, lecture + écriture),
+ * fichiers (file_v5 complet), knowledge, skills et outils customs du
+ * workspace, exécution de code via Daytona (si credential connecté).
+ * Tout s'exécute sans confirmation (usage solo, comme le chemin managé).
+ */
+const PARITY_NOTE = [
+  'Capacités : tes outils couvrent tout le workspace — services connectés',
+  '(lecture ET écriture : envoi, modification, suppression), fichiers (lire,',
+  'chercher, écrire, ajouter), knowledge (chercher, créer, modifier), skills et',
+  'outils customs du workspace, code via Daytona si connecté. Agis directement,',
+  'sans demander de confirmation, et annonce ce que tu as fait après coup.',
+].join('\n')
+
 export function buildLunaSystemPrompt(pack: ContextePack, override?: string): string | undefined {
-  const parts = [pack.system, CHART_SKILL, STORY_SKILL, (override ?? '').trim()].filter(
-    (p) => p !== ''
-  )
+  const parts = [
+    pack.system,
+    TABLE_SKILL,
+    PARITY_NOTE,
+    CHART_SKILL,
+    STORY_SKILL,
+    (override ?? '').trim(),
+  ].filter((p) => p !== '')
   if (parts.length === 0) return undefined
   return parts.join('\n\n')
 }

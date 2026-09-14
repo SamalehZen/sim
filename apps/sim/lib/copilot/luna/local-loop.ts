@@ -14,7 +14,14 @@
 
 import type { SessionPrincipal } from '@sim/auth/principal'
 import { db } from '@sim/db'
-import { copilotMessages, credential, mcpServers, workflow } from '@sim/db/schema'
+import {
+  copilotMessages,
+  credential,
+  customTools,
+  mcpServers,
+  skill,
+  workflow,
+} from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, asc, eq, isNotNull, isNull } from 'drizzle-orm'
 import { prepareCopilotEnvironmentContext } from '@/lib/copilot/environment-context'
@@ -111,6 +118,44 @@ async function connectedServiceTypes(workspaceId: string): Promise<string[]> {
     }
   }
   return types
+}
+
+/** Skills du workspace → inputs skills (le handler injecte load_skill + section prompt). */
+async function workspaceSkillInputs(workspaceId: string): Promise<{ skillId: string }[]> {
+  try {
+    const rows = await db
+      .select({ id: skill.id })
+      .from(skill)
+      .where(eq(skill.workspaceId, workspaceId))
+      .limit(30)
+    return rows.map((r) => ({ skillId: r.id }))
+  } catch (error) {
+    logger.warn('Skills illisibles, ignorés', {
+      workspaceId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return []
+  }
+}
+
+/** Outils customs du workspace → entrées custom-tool (parité managée). */
+async function workspaceCustomToolEntries(workspaceId: string): Promise<ToolInput[]> {
+  try {
+    const rows = await db
+      .select({ id: customTools.id })
+      .from(customTools)
+      .where(eq(customTools.workspaceId, workspaceId))
+      .limit(20)
+    return rows.map(
+      (r) => ({ type: 'custom-tool', customToolId: r.id, usageControl: 'auto' }) as ToolInput
+    )
+  } catch (error) {
+    logger.warn('Outils customs illisibles, ignorés', {
+      workspaceId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return []
+  }
 }
 
 export interface LunaTurnInput {
@@ -215,21 +260,14 @@ async function loadTranscript(chatId: string, limit = 30): Promise<AgentMessage[
   return out.slice(-limit)
 }
 
-/** Opérations en lecture seule exposées à Luna v1 (pas d'écriture sans approbation UI). */
-const READ_OP = /read|query|get|search|list|fetch|describe|view|show/i
-const WRITE_OP = /write|delete|update|append|insert|send|create|remove|post|publish|execute/i
-
-function isReadOperation(operation: string): boolean {
-  return READ_OP.test(operation) && !WRITE_OP.test(operation)
-}
-
 /**
- * Entrées d'outils `{type, operation}` par bloc : seules les opérations de
- * lecture (jamais d'écriture sans UI d'approbation). Capées pour le contexte.
+ * Entrées d'outils `{type, operation}` par bloc : TOUTES les opérations
+ * (lecture + écriture), parité avec le chemin managé sim.ai — Luna exécute
+ * sans UI d'approbation (usage solo assumé).
  * Les blocs sans menu d'opération (ex. file → file_read par défaut) sont
  * ajoutés nus : le sélecteur d'outil retombe sur `access[0]`.
  */
-function readOnlyToolEntries(blockTypes: string[]): ToolInput[] {
+function workspaceToolEntries(blockTypes: string[]): ToolInput[] {
   const entries: ToolInput[] = []
   for (const type of blockTypes) {
     let block
@@ -245,7 +283,6 @@ function readOnlyToolEntries(blockTypes: string[]): ToolInput[] {
       continue
     }
     for (const operation of operations) {
-      if (!isReadOperation(operation)) continue
       entries.push({ type, operation, usageControl: 'auto' } as ToolInput)
       if (entries.length >= 60) return entries
     }
@@ -279,11 +316,27 @@ export async function listLunaTables(workspaceId: string): Promise<LunaTableInve
   }
 }
 
-/** Une entrée query_rows + get_schema liées par table (capées pour le contexte). */
+/**
+ * Entrées liées par table : TOUTES les ops (lecture + écriture, parité
+ * managée). `tableId` pré-rempli côté serveur (`user-only`).
+ */
+const TABLE_OPERATIONS = [
+  'query_rows',
+  'get_schema',
+  'get_row',
+  'insert_row',
+  'batch_insert_rows',
+  'upsert_row',
+  'update_row',
+  'update_rows_by_filter',
+  'delete_row',
+  'delete_rows_by_filter',
+]
+
 function boundTableEntries(tables: LunaTableInventory[]): ToolInput[] {
   const entries: ToolInput[] = []
   for (const table of tables) {
-    for (const operation of ['query_rows', 'get_schema']) {
+    for (const operation of TABLE_OPERATIONS) {
       entries.push({
         type: 'table',
         operation,
@@ -291,7 +344,7 @@ function boundTableEntries(tables: LunaTableInventory[]): ToolInput[] {
         title: `Table ${table.name}`,
         usageControl: 'auto',
       } as ToolInput)
-      if (entries.length >= 20) return entries
+      if (entries.length >= 60) return entries
     }
   }
   return entries
@@ -301,7 +354,7 @@ function boundTableEntries(tables: LunaTableInventory[]): ToolInput[] {
 export function tableInventoryPrompt(tables: LunaTableInventory[]): string {
   if (tables.length === 0) return ''
   const lines = tables.map((t) => `- ${t.name} (${t.rowCount} lignes)`)
-  return `Tables du workspace (utilise tes outils table pour les lire) :\n${lines.join('\n')}`
+  return `Tables du workspace (lis, crée, remplis, modifie, supprime via tes outils table) :\n${lines.join('\n')}`
 }
 
 export async function runLocalLunaTurn(input: LunaTurnInput): Promise<LunaTurnResult> {
@@ -363,7 +416,10 @@ export async function runLocalLunaTurn(input: LunaTurnInput): Promise<LunaTurnRe
   }
 
   const tools: ToolInput[] = [
-    ...readOnlyToolEntries([...services, 'file', 'knowledge']),
+    // file_v5 = gestionnaire complet (le type 'file' legacy ne fait que parser).
+    ...workspaceToolEntries([...services, 'file_v5', 'knowledge']),
+    // Création de table : globale (pas de tableId requis).
+    { type: 'table', operation: 'create', usageControl: 'auto' } as ToolInput,
     ...boundTableEntries(await listLunaTables(workspaceId)),
     ...mcpServerIds.map(
       (serverId) =>
@@ -372,11 +428,16 @@ export async function runLocalLunaTurn(input: LunaTurnInput): Promise<LunaTurnRe
           params: { serverId },
         }) as ToolInput
     ),
+    // Outils customs du workspace (parité managée).
+    ...(await workspaceCustomToolEntries(workspaceId)),
   ]
+  // Skills du workspace (le handler injecte load_skill + section prompt).
+  const skillInputs = await workspaceSkillInputs(workspaceId)
   logger.info('Outils Luna assemblés', {
     workspaceId,
     services,
     mcpServers: mcpServerIds.length,
+    skills: skillInputs.length,
     toolEntries: tools.length,
   })
 
@@ -425,6 +486,7 @@ export async function runLocalLunaTurn(input: LunaTurnInput): Promise<LunaTurnRe
     model: LUNA_MODEL,
     messages,
     tools,
+    ...(skillInputs.length > 0 ? { skills: skillInputs } : {}),
     ...(systemPrompt ? { systemPrompt } : {}),
     memoryType: 'none' as const,
   }

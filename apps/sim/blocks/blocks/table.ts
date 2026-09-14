@@ -292,6 +292,7 @@ export const TableBlock: BlockConfig<TableQueryResponse> = {
       title: 'Operation',
       type: 'dropdown',
       options: [
+        { label: 'Create Table', id: 'create' },
         { label: 'Query Rows', id: 'query_rows' },
         { label: 'Insert Row', id: 'insert_row' },
         { label: 'Upsert Row', id: 'upsert_row' },
@@ -693,6 +694,7 @@ Return ONLY the sort JSON:`,
 
   tools: {
     access: [
+      'table_create',
       'table_insert_row',
       'table_batch_insert_rows',
       'table_upsert_row',
@@ -707,6 +709,7 @@ Return ONLY the sort JSON:`,
     config: {
       tool: (params) => {
         const toolMap: Record<string, string> = {
+          create: 'table_create',
           insert_row: 'table_insert_row',
           batch_insert_rows: 'table_batch_insert_rows',
           upsert_row: 'table_upsert_row',
