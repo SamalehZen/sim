@@ -211,12 +211,44 @@ const GAMME_SKILL = [
   "Règle : ne devine JAMAIS un rayon — demande ou liste d'abord.",
 ].join('\n')
 
+/**
+ * Récap rayon façon nao (recap-rayon.md) : recette fixe, pas d'improvisation.
+ * Phase A = 5 fences ```chart imposés + interprétation ; Phase B = UNE story.
+ * Adapté à nos formats (source.static avec lignes lues, fences ```story).
+ */
+const RECAP_SKILL = [
+  'Récap rayon : quand on demande récap, fais le point, état du rayon, résumé',
+  'ou story du jour — TOUJOURS Phase A (chat) PUIS Phase B (story). Chiffres',
+  "uniquement lus via outils MCP, jamais inventés. D'abord gamme_mon_rayon.",
+  'Phase A : 5 fences ```chart EXACTEMENT (données lues, source.static) :',
+  '1. line "Négatifs — tendance" x date/jour, séries negatifs #DC2626,',
+  'nouveaux #F59E0B, persistants #2563EB, hide_total true.',
+  '2. area "Capital PRMP bloqué vs récupéré (FDJ)" x date/jour, séries',
+  'prmp_negatif #DC2626 "Bloqué (FDJ)" et prmp_corrige #16A34A "Récupéré (FDJ)",',
+  'value_format {"d3_format":",.0f","suffix":" FDJ"}.',
+  '3. donut "Anomalies par type" x category/type, UNE série nb "Articles",',
+  'show_data_labels true.',
+  '4. bar "Top capital PRMP par article (FDJ)" x category/libelle, série',
+  'valeur_prmp #DC2626 format FDJ ",.0f", show_data_labels true, tri décroissant, top 8.',
+  '5. bar "Santé stock" x jour, séries en_stock #2563EB, stock_bas #F59E0B',
+  '"Stock bas ≤7j", dormants #8B5CF6, hide_total true.',
+  'Après CHAQUE graphique : 2-3 phrases (chiffre clé + sens + J/J-1 si dispo),',
+  'codes articles cités. Montants en FDJ, jamais convertis.',
+  'Phase B : UN fence ```story {"action":"create","id":"recap-<rayon>",',
+  '"title":"Récap <Rayon> — <jour>","code":"..."} ; récaps suivants :',
+  '{"action":"replace"} même slug (jamais de nouveau slug, jamais 2 stories).',
+  'Story : markdown + blocs <chart>/<table> (JSON complet, chart_type table',
+  'pour les tableaux), 5 onglets : 🎯 Dashboard, 🚨 Alertes & ruptures,',
+  "💰 Marges & capital, 🛠️ Plan d'action 48 h, 📊 Lecture direction.",
+].join('\n')
+
 export function buildLunaSystemPrompt(pack: ContextePack, override?: string): string | undefined {
   const parts = [
     pack.system,
     TABLE_SKILL,
     PARITY_NOTE,
     GAMME_SKILL,
+    RECAP_SKILL,
     CHART_SKILL,
     STORY_SKILL,
     (override ?? '').trim(),

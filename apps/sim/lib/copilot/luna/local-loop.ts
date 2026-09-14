@@ -669,6 +669,9 @@ export async function runLocalLunaTurn(input: LunaTurnInput): Promise<LunaTurnRe
     ...(skillInputs.length > 0 ? { skills: skillInputs } : {}),
     ...(systemPrompt ? { systemPrompt } : {}),
     memoryType: 'none' as const,
+    // Plafond large pour les tours longs (récaps : 5 charts + story).
+    // Simple plafond, pas de cible : sans coût pour les réponses courtes.
+    maxTokens: '16000',
   }
 
   const handler = new AgentBlockHandler()
