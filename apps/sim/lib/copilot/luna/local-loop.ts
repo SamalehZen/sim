@@ -188,13 +188,10 @@ async function drainAgentStream(
 ): Promise<string> {
   let fullText = ''
   let pendingText = ''
-  if (streaming.subscribe) {
-    streaming.subscribe({
-      onEvent: (event: AgentStreamEvent) => {
-        void emit(event)
-      },
-    })
-  }
+  // Pas de `streaming.subscribe` : l'abonnement installé ici arriverait après
+  // le drain de la pompe (abonnés tardifs = événements futurs uniquement).
+  // La boucle ci-dessous transmet chaque événement lu (le traducteur filtre
+  // les frontières internes type turn_end) : chemin unique et déterministe.
   if (streaming.streamFormat !== 'agent-events-v1') {
     const byteReader = (streaming.stream as ReadableStream<Uint8Array>).getReader()
     const decoder = new TextDecoder()
@@ -222,14 +219,18 @@ async function drainAgentStream(
       if (value.turn === 'intermediate') continue
       if (value.turn === 'pending') {
         pendingText += value.text
+        await emit(value)
         continue
       }
       fullText += value.text
+      await emit(value)
     } else if (value.type === 'turn_end') {
       if (value.turn === 'final') {
         fullText += pendingText
       }
       pendingText = ''
+    } else {
+      await emit(value)
     }
   }
   try {
@@ -450,6 +451,7 @@ export async function runLocalLunaTurn(input: LunaTurnInput): Promise<LunaTurnRe
     metadata: { id: BlockType.AGENT, name: 'Luna Chat' },
     enabled: true,
   }
+  const blockId = block.id as string
 
   const execContext: ExecutionContext = {
     workflowId: lunaWorkflowId,
@@ -457,6 +459,10 @@ export async function runLocalLunaTurn(input: LunaTurnInput): Promise<LunaTurnRe
     executionId,
     userId,
     ...(principal ? { principal } : {}),
+    // Streaming exigé par le handler (sinon provider en stream:false et
+    // réponse d'un seul bloc) : stream + output sélectionné = bloc courant.
+    stream: true,
+    selectedOutputs: [blockId],
     // Autorité d'exécution exigée par l'enrichissement des schémas d'outils
     // (tables, KB) : même défaut que le chemin Go (sujet direct). Sans
     // executionId : il pointerait vers un run inexistant (pas de ligne

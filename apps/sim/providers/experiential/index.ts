@@ -580,6 +580,97 @@ export const experientialProvider: ProviderConfig = {
           total: accumulatedCost.total + toolCost,
         }
 
+        // HyperFix chat-light : vraie réponse finale streamée (pas de bloc unique).
+        // La boucle outils reste non-streaming, mais la réponse finale repart en
+        // streaming (tool_choice none, sans outils) pour un affichage progressif.
+        // Les sorties structurées restent en flux figé (pas de JSON partiel).
+        if (!request.responseFormat) {
+          try {
+            const finalStreamPayload: any = {
+              ...payload,
+              messages: currentMessages,
+              tool_choice: 'none',
+              tools: undefined,
+            }
+
+            const finalStreamStartTime = Date.now()
+            const finalStreamParams: ChatCompletionCreateParamsStreaming = {
+              ...finalStreamPayload,
+              stream: true,
+              stream_options: { include_usage: true },
+            }
+            const finalStreamResponse = await client.chat.completions.create(
+              finalStreamParams,
+              request.abortSignal ? { signal: request.abortSignal } : undefined
+            )
+
+            const baseTokens = { ...tokens }
+            const baseCost = accumulatedCost
+            return createStreamingExecution({
+              model: requestedModel,
+              providerStartTime,
+              providerStartTimeISO,
+              timing: {
+                kind: 'accumulated',
+                modelTime,
+                toolsTime,
+                firstResponseTime,
+                iterations: timeSegments.filter((segment) => segment.type === 'model').length,
+                timeSegments,
+              },
+              initialTokens: {
+                input: baseTokens.input,
+                output: baseTokens.output,
+                total: baseTokens.total,
+              },
+              initialCost: finalCost,
+              toolCalls:
+                toolCalls.length > 0 ? { list: toolCalls, count: toolCalls.length } : undefined,
+              streamFormat: 'agent-events-v1',
+              createStream: ({ output, finalizeTiming }) =>
+                createReadableStreamFromOpenAIStream(
+                  finalStreamResponse,
+                  (streamedContent, usage) => {
+                    content = streamedContent
+                    tokens.input = baseTokens.input + (usage.prompt_tokens || 0)
+                    tokens.output = baseTokens.output + (usage.completion_tokens || 0)
+                    tokens.total = baseTokens.total + (usage.total_tokens || 0)
+                    const streamEndTime = Date.now()
+                    timeSegments.push({
+                      type: 'model',
+                      name: 'Final streamed answer',
+                      startTime: finalStreamStartTime,
+                      endTime: streamEndTime,
+                      duration: streamEndTime - finalStreamStartTime,
+                    })
+                    const streamCost = calculateCost(
+                      requestedModel,
+                      usage.prompt_tokens || 0,
+                      usage.completion_tokens || 0
+                    )
+                    output.content = streamedContent
+                    output.tokens = {
+                      input: tokens.input,
+                      output: tokens.output,
+                      total: tokens.total,
+                    }
+                    output.cost = {
+                      input: baseCost.input + streamCost.input,
+                      output: baseCost.output + streamCost.output,
+                      toolCost: toolCost || undefined,
+                      total: baseCost.total + streamCost.total + toolCost,
+                    }
+                    finalizeTiming()
+                  }
+                ),
+            })
+          } catch (error) {
+            logger.warn('Final streamed answer failed, falling back to settled stream', {
+              error: toError(error).message,
+            })
+          }
+        }
+
         const streamingResult = createStreamingExecution({
           model: requestedModel,
           providerStartTime,
