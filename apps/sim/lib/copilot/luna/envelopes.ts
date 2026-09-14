@@ -153,7 +153,11 @@ const STORY_SKILL = [
   'crée une story avec UN bloc ```story {"action":"create","id":"mon-slug",',
   '"title":"Titre","code":"# Titre\\n<chart>{...}</chart>"}. Les blocs <chart> et',
   '<table> contiennent le même JSON que tes fences ```chart (données lues,',
-  'jamais inventées). Modifie ensuite avec {"action":"update","id":"...","search":"...","replace":"..."}',
+  'jamais inventées). Un bloc <table> DOIT contenir chart_type:"table" plus',
+  'un titre, ex. {"source":{...},"chart_type":"table","title":"Détails"}.',
+  'Règles blocs : JSON COMPLET à chaque fois (toutes les accolades fermées),',
+  '12 lignes max par bloc, jamais de JSON coupé en route.',
+  'Modifie ensuite avec {"action":"update","id":"...","search":"...","replace":"..."}',
   'ou {"action":"replace","id":"...","code":"..."}. Un seul fence ```story par message.',
 ].join('\n')
 

@@ -59,30 +59,67 @@ export function validateStoryCode(
   if (code.length > 200000) {
     return { ok: false, error: 'Story code exceeds 200000 characters' }
   }
+  const raw = extractRawBlocks(code)
   const blocks: StoryChartBlock[] = []
-  for (const block of extractRawBlocks(code)) {
+  for (let i = 0; i < raw.length; i++) {
+    const block = raw[i]
+    const label = `<${block.kind}> n°${i + 1}`
     let json: unknown
     try {
       json = JSON.parse(block.json.trim())
     } catch {
-      return { ok: false, error: `Invalid JSON in <${block.kind}> block` }
+      const hint = looksTruncated(block.json)
+        ? ' (JSON tronqué/incomplet : referme toutes les accolades)'
+        : ''
+      return { ok: false, error: `Invalid JSON in ${label} block${hint}` }
     }
     const parsed = InputSchema.safeParse(json)
     if (!parsed.success) {
+      const issue = parsed.error.issues[0]
+      const where = issue && (issue.path?.length ?? 0) > 0 ? ` (${issue.path.join('.')})` : ''
       return {
         ok: false,
-        error: `Invalid <${block.kind}> block: ${parsed.error.issues[0]?.message ?? 'invalid input'}`,
+        error: `Invalid ${label} block${where}: ${issue?.message ?? 'invalid input'}`,
       }
     }
     if (block.kind === 'chart' && parsed.data.chart_type === 'table') {
-      return { ok: false, error: 'A <chart> block must not use chart_type "table"' }
+      return {
+        ok: false,
+        error: `Invalid ${label} block: a <chart> block must not use chart_type "table"`,
+      }
     }
     if (block.kind === 'table' && parsed.data.chart_type !== 'table') {
-      return { ok: false, error: 'A <table> block must use chart_type "table"' }
+      return {
+        ok: false,
+        error: `Invalid ${label} block: a <table> block must use chart_type "table"`,
+      }
     }
     blocks.push({ kind: block.kind, input: parsed.data, start: block.start, end: block.end })
   }
   return { ok: true, blocks }
+}
+
+/** Heuristique : le JSON semble coupé avant la fin (accolades non équilibrées). */
+function looksTruncated(json: string): boolean {
+  const s = json.trim()
+  if (s === '') return true
+  let depth = 0
+  let inString = false
+  let escaped = false
+  for (const char of s) {
+    if (inString) {
+      if (escaped) escaped = false
+      else if (char === '\\') escaped = true
+      else if (char === '"') inString = false
+    } else if (char === '"') {
+      inString = true
+    } else if (char === '{' || char === '[') {
+      depth += 1
+    } else if (char === '}' || char === ']') {
+      depth -= 1
+    }
+  }
+  return depth > 0 || inString
 }
 
 /** Construit un bloc <chart> depuis un Input (B2-e add-to-story). */
